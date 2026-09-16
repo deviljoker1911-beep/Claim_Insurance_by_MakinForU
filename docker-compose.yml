@@ -1,0 +1,21 @@
+# Optional: PostgreSQL for ClaimAI if you don't run a local server.
+# Start with `make db-docker`; matches the default DATABASE_URL in .env.example.
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: claimai
+      POSTGRES_PASSWORD: claimai
+      POSTGRES_DB: claimai
+    ports:
+      - "5433:5432"
+    volumes:
+      - claimai-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U claimai -d claimai"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  claimai-pgdata:

@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.venv-heavy/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Node / frontend
+node_modules/
+frontend/dist/
+*.tsbuildinfo
+
+# Environment & secrets
+.env
+.env.*
+!.env.example
+
+# Runtime data (uploaded originals, rendered pages, reports, local SQLite)
+backend/storage/
+*.db
+*.sqlite3
+
+# Test / e2e output
+playwright-report/
+test-results/
+coverage/
+
+# OS / editors / local tooling
+.DS_Store
+.idea/
+.vscode/
+.claude/
+*.log

@@ -1,0 +1,56 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+
+  /* Brand: clinical teal-blue */
+  --color-brand-50: #eff8fb;
+  --color-brand-100: #d8eef5;
+  --color-brand-200: #b3dcea;
+  --color-brand-300: #80c3da;
+  --color-brand-400: #47a2c3;
+  --color-brand-500: #2885aa;
+  --color-brand-600: #1b6b8f;
+  --color-brand-700: #185775;
+  --color-brand-800: #184961;
+  --color-brand-900: #173e52;
+  --color-brand-950: #0c2736;
+
+  /* Navigation surface */
+  --color-navy-950: #07131d;
+  --color-navy-900: #0b1c2a;
+  --color-navy-800: #112839;
+  --color-navy-700: #193649;
+
+  --shadow-card: 0 1px 2px 0 rgb(15 23 42 / 0.04), 0 1px 3px 0 rgb(15 23 42 / 0.05);
+  --shadow-elevated: 0 12px 32px -12px rgb(15 23 42 / 0.2);
+
+  --animate-fade-in: fade-in 0.28s ease-out both;
+
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+      transform: translateY(4px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+}
+
+@layer base {
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    @apply bg-slate-50 text-slate-900;
+    font-feature-settings: "cv11", "ss01";
+  }
+
+  ::selection {
+    @apply bg-brand-100 text-brand-900;
+  }
+}

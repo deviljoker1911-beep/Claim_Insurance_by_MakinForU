@@ -1,0 +1,32 @@
+[project]
+name = "claimai-backend"
+version = "0.1.0"
+description = "ClaimAI — AI-powered claim pre-submission validation (prototype API)"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "fastapi>=0.141.1",
+    "uvicorn[standard]>=0.53.0",
+    "pydantic>=2.13",
+    "pydantic-settings>=2.10",
+    "sqlalchemy>=2.0.54",
+    "psycopg[binary]>=3.3.5",
+    "python-multipart>=0.0.32",
+    "pyyaml>=6.0.2",
+]
+
+[dependency-groups]
+dev = [
+    "httpx2>=2.13.0",
+    "pytest>=8.4",
+]
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+filterwarnings = [
+    # Emitted by Starlette's own test client internals, not by application code.
+    "ignore:The anyio.abc.BlockingPortal alias is deprecated:DeprecationWarning",
+]
