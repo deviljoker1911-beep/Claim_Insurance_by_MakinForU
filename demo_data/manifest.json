@@ -1,0 +1,312 @@
+{
+  "name": "ClaimAI synthetic demo claim",
+  "notice": "SYNTHETIC DEMO DOCUMENT — NOT A REAL RECORD",
+  "synthetic": true,
+  "generator_version": 1,
+  "note": "All people, organisations, identifiers and values are fictional. expected_doc_type and seeded_issues are test ground truth; the application never reads them.",
+  "claim": {
+    "patient_name": "Rajesh Sharma",
+    "uhid": "UHID-123456",
+    "hospital": "CityCare Multispeciality Hospital",
+    "insurer": "Demo Health Insurance",
+    "tpa": "Demo TPA",
+    "admission_date": "2026-01-12",
+    "discharge_date": "2026-01-16"
+  },
+  "sets": {
+    "initial": [
+      {
+        "filename": "01_Patient_ID.png",
+        "path": "initial/01_Patient_ID.png",
+        "label": "Patient ID (insurer health e-card)",
+        "media_type": "image/png",
+        "pages": 1,
+        "size_bytes": 75536,
+        "sha256": "53dc5d6306bafa84be01988ae3c28bd321e4f5c46cb8ab2c9cd76d4a2ca9fd3e",
+        "expected_doc_type": "patient_id",
+        "seeded_issues": []
+      },
+      {
+        "filename": "02_Admission_Form.pdf",
+        "path": "initial/02_Admission_Form.pdf",
+        "label": "Admission form",
+        "media_type": "application/pdf",
+        "pages": 1,
+        "size_bytes": 4728,
+        "sha256": "e80b46d71f331df5aa59efcd3e7792c5b6e7e69bb8865db5e1d0aa48f7c3a17c",
+        "expected_doc_type": "admission_record",
+        "seeded_issues": []
+      },
+      {
+        "filename": "03_Doctor_Consultation.pdf",
+        "path": "initial/03_Doctor_Consultation.pdf",
+        "label": "Doctor consultation note",
+        "media_type": "application/pdf",
+        "pages": 1,
+        "size_bytes": 4923,
+        "sha256": "57443e88f19f6360a7fda8ea4c189df12b51f302933164990ea304592b6ec205",
+        "expected_doc_type": "consultation",
+        "seeded_issues": []
+      },
+      {
+        "filename": "04_PreOp_Assessment.pdf",
+        "path": "initial/04_PreOp_Assessment.pdf",
+        "label": "Pre-operative assessment",
+        "media_type": "application/pdf",
+        "pages": 1,
+        "size_bytes": 4772,
+        "sha256": "bdd2ebec6c970b22deeced1df4c6a0b54836bd92c9025a7aa84e62c47c721a7f",
+        "expected_doc_type": "pre_operative_assessment",
+        "seeded_issues": []
+      },
+      {
+        "filename": "05_Anaesthesia_Assessment.pdf",
+        "path": "initial/05_Anaesthesia_Assessment.pdf",
+        "label": "Pre-anaesthetic check-up",
+        "media_type": "application/pdf",
+        "pages": 1,
+        "size_bytes": 4834,
+        "sha256": "843ce6be2ea6dd20aca815432345551f9701cc68f77b9cbd64282c0fb22d6de6",
+        "expected_doc_type": "anaesthesia_assessment",
+        "seeded_issues": []
+      },
+      {
+        "filename": "06_Discharge_Summary.pdf",
+        "path": "initial/06_Discharge_Summary.pdf",
+        "label": "Discharge summary",
+        "media_type": "application/pdf",
+        "pages": 3,
+        "size_bytes": 10445,
+        "sha256": "0f965d390bc29db1510110b29ac3f2a96f072445b21b9162895ad48eb779552b",
+        "expected_doc_type": "discharge_summary",
+        "seeded_issues": []
+      },
+      {
+        "filename": "07_Prescription.pdf",
+        "path": "initial/07_Prescription.pdf",
+        "label": "Discharge prescription",
+        "media_type": "application/pdf",
+        "pages": 1,
+        "size_bytes": 4511,
+        "sha256": "501699207e9ca80484b3351875c285a64fa5049ee7a57d077a47897cc731c886",
+        "expected_doc_type": "prescription",
+        "seeded_issues": []
+      },
+      {
+        "filename": "08_Nursing_Record.pdf",
+        "path": "initial/08_Nursing_Record.pdf",
+        "label": "Nursing record",
+        "media_type": "application/pdf",
+        "pages": 2,
+        "size_bytes": 8741,
+        "sha256": "75c117475b0df93b91ae0d681e6743c3e049f3e3ecc56b32ad7466798a3bfe38",
+        "expected_doc_type": "nursing_record",
+        "seeded_issues": []
+      },
+      {
+        "filename": "09_USG_Abdomen_Scan.jpg",
+        "path": "initial/09_USG_Abdomen_Scan.jpg",
+        "label": "USG abdomen report (poor-quality scan)",
+        "media_type": "image/jpeg",
+        "pages": 1,
+        "size_bytes": 80336,
+        "sha256": "7f096318d2fa01f7ac0d6f3af86c3de8adbc587aa7e77b071729c28cc4bb4693",
+        "expected_doc_type": "investigation_report",
+        "seeded_issues": [
+          "low_quality_scan"
+        ]
+      },
+      {
+        "filename": "10_Lab_Report.pdf",
+        "path": "initial/10_Lab_Report.pdf",
+        "label": "Laboratory report",
+        "media_type": "application/pdf",
+        "pages": 1,
+        "size_bytes": 5280,
+        "sha256": "8a5436f4e4adbafdd01c2aee66d6bd7fce35107fe133f31dff93bd4f4c308c89",
+        "expected_doc_type": "lab_report",
+        "seeded_issues": [
+          "duplicate_document"
+        ]
+      },
+      {
+        "filename": "11_Lab_Report_copy.pdf",
+        "path": "initial/11_Lab_Report_copy.pdf",
+        "label": "Laboratory report (duplicate copy)",
+        "media_type": "application/pdf",
+        "pages": 1,
+        "size_bytes": 5280,
+        "sha256": "8a5436f4e4adbafdd01c2aee66d6bd7fce35107fe133f31dff93bd4f4c308c89",
+        "expected_doc_type": "lab_report",
+        "seeded_issues": [
+          "duplicate_document"
+        ],
+        "duplicate_of": "10_Lab_Report.pdf"
+      },
+      {
+        "filename": "12_Main_Hospital_Bill.pdf",
+        "path": "initial/12_Main_Hospital_Bill.pdf",
+        "label": "Main hospital bill",
+        "media_type": "application/pdf",
+        "pages": 1,
+        "size_bytes": 5279,
+        "sha256": "d2e156a50c7c5cb2a9d311a2115e40ece17e7c7ee620d8f696d60495045080fc",
+        "expected_doc_type": "hospital_bill",
+        "seeded_issues": [
+          "duplicate_bill_number",
+          "bill_arithmetic_mismatch"
+        ]
+      },
+      {
+        "filename": "13_Pharmacy_Bill.pdf",
+        "path": "initial/13_Pharmacy_Bill.pdf",
+        "label": "Pharmacy bill",
+        "media_type": "application/pdf",
+        "pages": 1,
+        "size_bytes": 5144,
+        "sha256": "6acd67bc39b8bd600059518687a366ffa1e52debc638ca1567ccbd7fda493c40",
+        "expected_doc_type": "pharmacy_bill",
+        "seeded_issues": [
+          "patient_name_mismatch"
+        ]
+      },
+      {
+        "filename": "14_OT_Bill.pdf",
+        "path": "initial/14_OT_Bill.pdf",
+        "label": "Operation theatre bill",
+        "media_type": "application/pdf",
+        "pages": 1,
+        "size_bytes": 4478,
+        "sha256": "d8c0402c9e106ee9f35211c0e1668535936a0d6e4d589b43438afcc7167fa963",
+        "expected_doc_type": "ot_bill",
+        "seeded_issues": [
+          "duplicate_bill_number"
+        ]
+      },
+      {
+        "filename": "15_Implant_Invoice.pdf",
+        "path": "initial/15_Implant_Invoice.pdf",
+        "label": "Implant invoice",
+        "media_type": "application/pdf",
+        "pages": 1,
+        "size_bytes": 4867,
+        "sha256": "a2ebe7fc56809df6be652016ee81e4eba770618c0181cbc0f99f438dc5fdc945",
+        "expected_doc_type": "implant_invoice",
+        "seeded_issues": [
+          "potential_alteration"
+        ]
+      },
+      {
+        "filename": "16_Consent_Form.pdf",
+        "path": "initial/16_Consent_Form.pdf",
+        "label": "Consent form",
+        "media_type": "application/pdf",
+        "pages": 1,
+        "size_bytes": 4741,
+        "sha256": "3ead7440d66b841a75b06c6b8636b088397cccd51e2f703d71135b57c7a8cb9a",
+        "expected_doc_type": "consent",
+        "seeded_issues": [
+          "missing_patient_signature"
+        ]
+      }
+    ],
+    "operative_note": [
+      {
+        "filename": "scan_0042.pdf",
+        "path": "later/scan_0042.pdf",
+        "label": "Operative note (generic scan filename)",
+        "media_type": "application/pdf",
+        "pages": 2,
+        "size_bytes": 7106,
+        "sha256": "2fe7437bc9d464968def3177bc148f4ce5932aec4a0d8de7dbf3c53859e9ace7",
+        "expected_doc_type": "operative_note",
+        "seeded_issues": []
+      }
+    ],
+    "anaesthesia_record": [
+      {
+        "filename": "Anaesthesia_Record.pdf",
+        "path": "later/Anaesthesia_Record.pdf",
+        "label": "Anaesthesia record",
+        "media_type": "application/pdf",
+        "pages": 2,
+        "size_bytes": 7520,
+        "sha256": "5e2973a561a5b96f261141fa0c5bb68d1a3ebdc47957a55e159c079930ea9a50",
+        "expected_doc_type": "anaesthesia_record",
+        "seeded_issues": []
+      }
+    ]
+  },
+  "seeded_issues": [
+    {
+      "id": "missing_operative_note",
+      "expected_finding": "MISSING_REQUIRED_DOCUMENT",
+      "documents": [],
+      "description": "No Operative Note in the initial upload; it is provided later as scan_0042.pdf."
+    },
+    {
+      "id": "missing_anaesthesia_record",
+      "expected_finding": "MISSING_REQUIRED_DOCUMENT",
+      "documents": [],
+      "description": "No Anaesthesia Record in the initial upload; it is provided later as Anaesthesia_Record.pdf."
+    },
+    {
+      "id": "patient_name_mismatch",
+      "expected_finding": "PATIENT_NAME_MISMATCH",
+      "documents": [
+        "13_Pharmacy_Bill.pdf"
+      ],
+      "description": "Pharmacy bill names the patient 'Rajesh K.' instead of 'Rajesh Sharma' (same UHID)."
+    },
+    {
+      "id": "duplicate_bill_number",
+      "expected_finding": "DUPLICATE_BILL_NUMBER",
+      "documents": [
+        "12_Main_Hospital_Bill.pdf",
+        "14_OT_Bill.pdf"
+      ],
+      "description": "Main hospital bill and OT bill share bill number CCH/IP/2026/08812."
+    },
+    {
+      "id": "bill_arithmetic_mismatch",
+      "expected_finding": "BILL_ARITHMETIC_MISMATCH",
+      "documents": [
+        "12_Main_Hospital_Bill.pdf"
+      ],
+      "description": "Room Rent 4 x 4,500.00 is billed as 20,000.00 (expected 18,000.00; difference Rs. 2,000.00). All other lines and the totals are consistent."
+    },
+    {
+      "id": "low_quality_scan",
+      "expected_finding": "LOW_QUALITY_PAGE",
+      "documents": [
+        "09_USG_Abdomen_Scan.jpg"
+      ],
+      "description": "Ultrasound report is a low-resolution (96 DPI), blurred, skewed, low-contrast scan."
+    },
+    {
+      "id": "missing_patient_signature",
+      "expected_finding": "SIGNATURE_NOT_DETECTED",
+      "documents": [
+        "16_Consent_Form.pdf"
+      ],
+      "description": "The 'Signature of Patient / Guardian' slot on the consent form is blank."
+    },
+    {
+      "id": "duplicate_document",
+      "expected_finding": "DUPLICATE_DOCUMENT",
+      "documents": [
+        "10_Lab_Report.pdf",
+        "11_Lab_Report_copy.pdf"
+      ],
+      "description": "The lab report is uploaded twice as byte-identical files."
+    },
+    {
+      "id": "potential_alteration",
+      "expected_finding": "POTENTIAL_ALTERATION",
+      "documents": [
+        "15_Implant_Invoice.pdf"
+      ],
+      "description": "Implant rate 1,000.00 is hidden under an opaque white box and overwritten as 1,100.00. The visible line (6 x 1,100.00 = 6,600.00) is arithmetically consistent."
+    }
+  ]
+}

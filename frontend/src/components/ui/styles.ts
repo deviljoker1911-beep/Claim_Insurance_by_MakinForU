@@ -1,7 +1,7 @@
 import { cx } from '../../lib/cx'
 
 export type Tone = 'neutral' | 'brand' | 'success' | 'warning' | 'danger' | 'info'
-export type ButtonVariant = 'primary' | 'secondary' | 'ghost'
+export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger'
 export type ButtonSize = 'sm' | 'md'
 
 const buttonBase =
@@ -13,6 +13,7 @@ const buttonVariants: Record<ButtonVariant, string> = {
   primary: 'bg-brand-600 text-white shadow-sm hover:bg-brand-700 disabled:hover:bg-brand-600',
   secondary: 'border border-slate-200 bg-white text-slate-700 shadow-sm hover:bg-slate-50 hover:text-slate-900',
   ghost: 'text-slate-600 hover:bg-slate-100 hover:text-slate-900',
+  danger: 'bg-rose-600 text-white shadow-sm hover:bg-rose-700 disabled:hover:bg-rose-600',
 }
 
 const buttonSizes: Record<ButtonSize, string> = {

@@ -1,0 +1,7 @@
+# Generated demo documents and their manifest are verified byte for byte (SHA-256):
+# never let Git rewrite line endings in them.
+demo_data/** -text
+*.pdf binary
+*.png binary
+*.jpg binary
+*.jpeg binary

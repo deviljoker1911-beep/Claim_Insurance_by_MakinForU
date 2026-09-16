@@ -1,15 +1,28 @@
-import { Bot, CircleX, Cpu, Database, FlaskConical, RefreshCw, Server, type LucideIcon } from 'lucide-react'
-import type { ReactNode } from 'react'
+import {
+  Bot,
+  CircleX,
+  Cpu,
+  Database,
+  FlaskConical,
+  LoaderCircle,
+  RefreshCw,
+  RotateCcw,
+  Server,
+  type LucideIcon,
+} from 'lucide-react'
+import { useState, type ReactNode } from 'react'
 
 import { Badge } from '../components/ui/Badge'
 import { Button } from '../components/ui/Button'
 import { Card, CardHeader } from '../components/ui/Card'
 import { EmptyState } from '../components/ui/EmptyState'
+import { Notice } from '../components/ui/Notice'
 import { PageHeader } from '../components/ui/PageHeader'
 import { Skeleton } from '../components/ui/Skeleton'
 import { iconTones, type Tone } from '../components/ui/styles'
 import { cx } from '../lib/cx'
-import { useHealth } from '../lib/hooks'
+import { plural } from '../lib/format'
+import { useHealth, useResetDemo } from '../lib/hooks'
 import type { HealthResponse } from '../lib/types'
 
 const DIALECTS: Record<string, string> = { postgresql: 'PostgreSQL', sqlite: 'SQLite' }
@@ -46,7 +59,65 @@ export function SettingsPage() {
         </Card>
       )}
       {health.status === 'success' && <SettingsContent data={health.data} />}
+      {health.status === 'success' && <DemoWorkspaceCard />}
     </>
+  )
+}
+
+function DemoWorkspaceCard() {
+  const reset = useResetDemo()
+  const [confirming, setConfirming] = useState(false)
+  const result = reset.data
+
+  return (
+    <Card className="mt-6" data-testid="demo-workspace">
+      <CardHeader
+        title="Demo workspace"
+        description="Synthetic demo data used for client demonstrations."
+        actions={<Badge tone="warning">Synthetic data only</Badge>}
+      />
+      <div className="flex flex-wrap items-center justify-between gap-4 p-5">
+        <p className="max-w-2xl text-sm leading-relaxed text-slate-600">
+          Resetting deletes every claim, uploaded original and audit event, recreates the synthetic demo documents and
+          restarts claim numbering, so the next new claim is <span className="font-semibold">CLM-2026-00123</span>.
+          Application settings are kept.
+        </p>
+        {confirming ? (
+          <div className="flex gap-2">
+            <Button variant="secondary" onClick={() => setConfirming(false)} disabled={reset.isPending}>
+              Cancel
+            </Button>
+            <Button
+              variant="danger"
+              data-testid="confirm-reset"
+              disabled={reset.isPending}
+              onClick={() => reset.mutate(undefined, { onSettled: () => setConfirming(false) })}
+            >
+              {reset.isPending ? <LoaderCircle className="size-4 animate-spin" /> : <RotateCcw className="size-4" />}
+              Confirm reset
+            </Button>
+          </div>
+        ) : (
+          <Button variant="secondary" onClick={() => setConfirming(true)} data-testid="reset-demo">
+            <RotateCcw className="size-4" />
+            Reset demo workspace
+          </Button>
+        )}
+      </div>
+      {(result || reset.error) && (
+        <div className="border-t border-slate-100 px-5 py-4">
+          {result && (
+            <Notice tone={result.demo_data.verified ? 'success' : 'danger'}>
+              Workspace reset: {plural(result.deleted.claims, 'claim')} and {plural(result.deleted.documents, 'document')}{' '}
+              removed. Demo data {result.demo_data.verified ? 'verified' : 'NOT verified'} (
+              {plural(result.demo_data.files, 'file')}). Next claim number:{' '}
+              <span className="font-semibold">{result.next_claim_number}</span>.
+            </Notice>
+          )}
+          {reset.error && <Notice tone="danger">Reset failed: {reset.error.message}</Notice>}
+        </div>
+      )}
+    </Card>
   )
 }
 

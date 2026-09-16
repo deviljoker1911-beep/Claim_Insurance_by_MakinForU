@@ -10,7 +10,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from app import __version__
-from app.api import health
+from app.api import audit, claims, demo, documents, health
 from app.config import get_settings
 from app.db import init_db
 
@@ -47,6 +47,10 @@ app.add_middleware(
 )
 
 app.include_router(health.router, prefix="/api")
+app.include_router(claims.router, prefix="/api")
+app.include_router(documents.router, prefix="/api")
+app.include_router(demo.router, prefix="/api")
+app.include_router(audit.router, prefix="/api")
 
 
 @app.api_route("/api/{path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"], include_in_schema=False)

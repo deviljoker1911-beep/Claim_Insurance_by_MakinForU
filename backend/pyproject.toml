@@ -12,6 +12,9 @@ dependencies = [
     "psycopg[binary]>=3.3.5",
     "python-multipart>=0.0.32",
     "pyyaml>=6.0.2",
+    "reportlab>=5.0.1",
+    "pillow>=11",
+    "pymupdf>=1.28.2",
 ]
 
 [dependency-groups]
@@ -29,4 +32,6 @@ addopts = "-q"
 filterwarnings = [
     # Emitted by Starlette's own test client internals, not by application code.
     "ignore:The anyio.abc.BlockingPortal alias is deprecated:DeprecationWarning",
+    # Emitted when PyMuPDF's SWIG bindings are imported.
+    "ignore:builtin type (SwigPyPacked|SwigPyObject|swigvarlink) has no __module__ attribute:DeprecationWarning",
 ]

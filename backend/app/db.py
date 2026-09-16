@@ -23,7 +23,7 @@ def make_engine(url: str) -> Engine:
     parsed = make_url(url)
     kwargs: dict = {"pool_pre_ping": True}
     if parsed.get_backend_name() == "sqlite":
-        kwargs["connect_args"] = {"check_same_thread": False}
+        kwargs["connect_args"] = {"check_same_thread": False, "timeout": 15}
         if parsed.database and parsed.database != ":memory:":
             Path(parsed.database).parent.mkdir(parents=True, exist_ok=True)
     else:
@@ -41,9 +41,9 @@ def get_session() -> Iterator[Session]:
 
 
 def init_db() -> None:
-    from app import models  # noqa: F401  (registers tables on Base.metadata)
+    from app.services.workspace import initialize_workspace
 
-    Base.metadata.create_all(engine)
+    initialize_workspace()
 
 
 def check_database(db_engine: Engine | None = None) -> dict:

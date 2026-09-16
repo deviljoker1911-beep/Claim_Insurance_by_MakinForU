@@ -7,21 +7,29 @@ import {
   Settings,
   type LucideIcon,
 } from 'lucide-react'
-import { NavLink } from 'react-router'
+import { Link, useLocation } from 'react-router'
 
 import { cx } from '../../lib/cx'
 import { ApiStatus } from './ApiStatus'
 import { Logo } from './Logo'
 
-const NAV_ITEMS: Array<{ to: string; label: string; icon: LucideIcon; end: boolean }> = [
-  { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true },
-  { to: '/claims', label: 'My Claims', icon: FolderKanban, end: true },
-  { to: '/claims/new', label: 'New Claim', icon: FilePlus2, end: true },
-  { to: '/reports', label: 'Reports', icon: FileChartColumn, end: false },
-  { to: '/settings', label: 'Settings', icon: Settings, end: false },
+const NAV_ITEMS: Array<{ to: string; label: string; icon: LucideIcon; matches: (path: string) => boolean }> = [
+  { to: '/', label: 'Dashboard', icon: LayoutDashboard, matches: (path) => path === '/' },
+  {
+    to: '/claims',
+    label: 'My Claims',
+    icon: FolderKanban,
+    // Claim pages live under /claims/<id>/...; /claims/new belongs to "New Claim".
+    matches: (path) => path === '/claims' || (path.startsWith('/claims/') && !path.startsWith('/claims/new')),
+  },
+  { to: '/claims/new', label: 'New Claim', icon: FilePlus2, matches: (path) => path.startsWith('/claims/new') },
+  { to: '/reports', label: 'Reports', icon: FileChartColumn, matches: (path) => path.startsWith('/reports') },
+  { to: '/settings', label: 'Settings', icon: Settings, matches: (path) => path.startsWith('/settings') },
 ]
 
 export function Sidebar() {
+  const { pathname } = useLocation()
+
   return (
     <aside className="fixed inset-y-0 left-0 z-30 flex w-64 flex-col bg-navy-900 text-slate-300">
       <div className="flex h-16 items-center gap-3 border-b border-white/[0.06] px-5">
@@ -34,32 +42,29 @@ export function Sidebar() {
 
       <nav aria-label="Primary" className="flex-1 space-y-1 px-3 py-6">
         <p className="px-3 pb-2 text-[11px] font-semibold tracking-wider text-slate-500 uppercase">Workspace</p>
-        {NAV_ITEMS.map(({ to, label, icon: Icon, end }) => (
-          <NavLink
-            key={to}
-            to={to}
-            end={end}
-            className={({ isActive }) =>
-              cx(
+        {NAV_ITEMS.map(({ to, label, icon: Icon, matches }) => {
+          const active = matches(pathname)
+          return (
+            <Link
+              key={to}
+              to={to}
+              aria-current={active ? 'page' : undefined}
+              className={cx(
                 'group relative flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
-                isActive ? 'bg-white/[0.08] text-white' : 'text-slate-400 hover:bg-white/[0.04] hover:text-slate-100',
-              )
-            }
-          >
-            {({ isActive }) => (
-              <>
-                {isActive && <span className="absolute inset-y-2 left-0 w-0.5 rounded-full bg-brand-400" aria-hidden />}
-                <Icon
-                  className={cx(
-                    'size-4.5 transition-colors',
-                    isActive ? 'text-brand-300' : 'text-slate-500 group-hover:text-slate-300',
-                  )}
-                />
-                {label}
-              </>
-            )}
-          </NavLink>
-        ))}
+                active ? 'bg-white/[0.08] text-white' : 'text-slate-400 hover:bg-white/[0.04] hover:text-slate-100',
+              )}
+            >
+              {active && <span className="absolute inset-y-2 left-0 w-0.5 rounded-full bg-brand-400" aria-hidden />}
+              <Icon
+                className={cx(
+                  'size-4.5 transition-colors',
+                  active ? 'text-brand-300' : 'text-slate-500 group-hover:text-slate-300',
+                )}
+              />
+              {label}
+            </Link>
+          )
+        })}
       </nav>
 
       <div className="space-y-3 border-t border-white/[0.06] p-4">

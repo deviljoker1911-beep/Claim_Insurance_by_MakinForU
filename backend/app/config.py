@@ -34,6 +34,18 @@ class Settings(BaseSettings):
 
     database_url: str = f"sqlite:///{BACKEND_DIR / 'storage' / 'claimai.db'}"
     storage_dir: Path = BACKEND_DIR / "storage"
+    demo_data_dir: Path = REPO_ROOT / "demo_data"
+
+    # Claim numbers are "<claim_series>-<5-digit sequence>". A demo reset restarts the
+    # sequence at claim_sequence_start (the reserved range below it is for seeded demo claims).
+    claim_series: str = "CLM-2026"
+    claim_sequence_start: int = 123
+
+    max_upload_files: int = 50
+    max_upload_mb: int = 25
+
+    # Identity recorded on audit events until authentication exists.
+    operator_name: str = "Demo Operator"
 
     # Serve the built React app from FastAPI (single-port demo mode).
     serve_frontend: bool = False
@@ -45,7 +57,7 @@ class Settings(BaseSettings):
     openai_api_key: SecretStr = SecretStr("")
     openai_base_url: str = "https://api.openai.com/v1"
 
-    @field_validator("storage_dir", "frontend_dist", mode="after")
+    @field_validator("storage_dir", "frontend_dist", "demo_data_dir", mode="after")
     @classmethod
     def _resolve_relative_to_backend(cls, value: Path) -> Path:
         return value if value.is_absolute() else (BACKEND_DIR / value).resolve()

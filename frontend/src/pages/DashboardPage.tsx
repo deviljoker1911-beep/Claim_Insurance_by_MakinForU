@@ -71,7 +71,7 @@ export function DashboardPage() {
             </ButtonLink>
           }
         />
-        <ClaimsTable />
+        <ClaimsTable limit={8} />
       </Card>
     </>
   )
