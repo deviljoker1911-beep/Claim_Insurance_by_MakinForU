@@ -146,7 +146,18 @@ def test_unsupported_file_rejects_the_whole_batch(client, claim):
     detail = response.json()["detail"]
     assert detail["message"] == "1 of 3 file(s) could not be accepted. No files were stored."
     assert detail["errors"] == [
-        {"filename": "notes.txt", "error": "Unsupported file type. Upload PDF, PNG or JPG files."}
+        {"index": 2, "filename": "notes.txt", "error": "Unsupported file type. Upload PDF, PNG or JPG files."}
+    ]
+    _assert_nothing_stored(client, claim)
+
+
+def test_errors_identify_files_by_position_when_names_repeat(client, claim):
+    _, content, media_type = pack_files()[1]
+    files = [("dup.pdf", content, media_type), ("dup.pdf", b"not a pdf", media_type)]
+    response = upload(client, claim["id"], files)
+    assert response.status_code == 422
+    assert response.json()["detail"]["errors"] == [
+        {"index": 1, "filename": "dup.pdf", "error": "File content does not match its .pdf extension"}
     ]
     _assert_nothing_stored(client, claim)
 
@@ -164,7 +175,7 @@ def test_unsupported_file_rejects_the_whole_batch(client, claim):
 def test_invalid_files_are_rejected(client, claim, filename, content, error):
     response = upload(client, claim["id"], [(filename, content, "application/octet-stream")])
     assert response.status_code == 422
-    assert response.json()["detail"]["errors"] == [{"filename": filename, "error": error}]
+    assert response.json()["detail"]["errors"] == [{"index": 0, "filename": filename, "error": error}]
     _assert_nothing_stored(client, claim)
 
 
@@ -189,6 +200,15 @@ def test_path_components_are_stripped_from_filenames(client, claim):
     assert response.json()["documents"][0]["filename"] == name
 
 
+def test_overlong_filename_is_shortened_but_keeps_its_extension(client, claim):
+    _, content, media_type = pack_files()[1]
+    response = upload(client, claim["id"], [("L" * 300 + ".pdf", content, media_type)])
+    assert response.status_code == 201, response.text
+    stored = response.json()["documents"][0]["filename"]
+    assert len(stored) == 255
+    assert stored == "L" * 251 + ".pdf"
+
+
 def test_upload_requires_files(client, claim):
     assert client.post(f"/api/claims/{claim['id']}/documents").status_code == 422
 
@@ -200,3 +220,71 @@ def test_upload_to_unknown_claim_returns_404(client, workspace):
 def test_unknown_document_returns_404(client, workspace):
     assert client.get("/api/documents/missing").status_code == 404
     assert client.get("/api/documents/missing/file").status_code == 404
+
+
+MALFORMED_PDFS = {
+    "looping-page-tree.pdf": (
+        b"%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n"
+        b"2 0 obj<</Type/Pages/Count 3/Kids[2 0 R 2 0 R]>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF",
+        "The PDF could not be read (corrupt or unsupported file)",
+    ),
+    "impossible-page-count.pdf": (
+        b"%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n"
+        b"2 0 obj<</Type/Pages/Count 2147483647/Kids[]>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF",
+        "The PDF could not be read (corrupt or unsupported file)",
+    ),
+    "no-pages.pdf": (
+        b"%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n"
+        b"2 0 obj<</Type/Pages/Count 2 0 R/Kids[]>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF",
+        "The PDF has no pages",
+    ),
+}
+
+
+@pytest.mark.parametrize("filename", sorted(MALFORMED_PDFS))
+def test_structurally_broken_pdfs_are_per_file_errors(client, claim, filename):
+    content, message = MALFORMED_PDFS[filename]
+    good_name, good, media_type = pack_files()[1]
+    response = upload(client, claim["id"], [(good_name, good, media_type), (filename, content, "application/pdf")])
+    assert response.status_code == 422
+    assert response.json()["detail"]["errors"] == [{"index": 1, "filename": filename, "error": message}]
+    _assert_nothing_stored(client, claim)
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("Screenshot 2026-09-17 at 10.15.32 AM.png", "Screenshot 2026-09-17 at 10.15.32 AM.png"),
+        ("Discharge Summary.pdf", "Discharge Summary.pdf"),
+        ("invoice‮gpj.pdf", "invoicegpj.pdf"),
+        ("क्‍ष रिपोर्ट.pdf", "क्‍ष रिपोर्ट.pdf"),
+        ("bill\x00\x07.pdf", "bill.pdf"),
+        ("  ../../secret.pdf  ", "secret.pdf"),
+        ("", "unnamed"),
+    ],
+)
+def test_filename_cleaning(raw, expected):
+    from app.storage import clean_filename
+
+    assert clean_filename(raw) == expected
+
+
+def test_screenshot_style_names_survive_upload(client, claim):
+    _, content, _ = pack_files()[0]
+    name = "Screenshot 2026-09-17 at 10.15.32 AM.png"
+    response = upload(client, claim["id"], [(name, content, "image/png")])
+    assert response.status_code == 201
+    assert response.json()["documents"][0]["filename"] == "Screenshot 2026-09-17 at 10.15.32 AM.png"
+
+
+def test_overlong_declared_content_type_is_trimmed(client, claim):
+    from app.db import SessionLocal
+    from app.models import Document
+
+    name, content, _ = pack_files()[1]
+    response = upload(client, claim["id"], [(name, content, "application/" + "x" * 300)])
+    assert response.status_code == 201
+    with SessionLocal() as session:
+        stored = session.get(Document, response.json()["documents"][0]["id"])
+        assert len(stored.declared_content_type) == 128
+        assert stored.content_type == "application/pdf"

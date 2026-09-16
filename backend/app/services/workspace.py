@@ -2,10 +2,10 @@
 
 The claim workspace (claims, documents, audit events, claim counters) holds synthetic demo
 data only, so a schema change simply rebuilds it. Application settings are always preserved.
+Rebuilding holds WORKSPACE_LOCK exclusively, so it never runs under an in-flight request.
 """
 
 import logging
-import threading
 
 from sqlalchemy import func, inspect, select
 
@@ -14,6 +14,7 @@ from app.db import Base, SessionLocal, engine
 from app.demo_gen.generate import generate_in_memory
 from app.models import WORKSPACE_MODELS, AppSetting, AuditEvent, Claim, Document, utcnow
 from app.services.demo_pack import sync_demo_data
+from app.services.locks import WORKSPACE_LOCK
 from app.services.numbering import ensure_counter, peek_next_claim_number
 from app.storage import remove_all_claim_storage
 
@@ -21,7 +22,6 @@ logger = logging.getLogger("claimai.workspace")
 
 WORKSPACE_SCHEMA_VERSION = 2
 SCHEMA_VERSION_KEY = "workspace_schema_version"
-_lock = threading.Lock()
 
 
 def _workspace_tables():
@@ -46,7 +46,10 @@ def _set_setting(session, key: str, value) -> None:
 
 
 def rebuild_workspace() -> None:
-    """Drop and recreate the claim workspace tables and delete stored originals."""
+    """Drop and recreate the claim workspace tables and delete stored originals.
+
+    Callers must hold WORKSPACE_LOCK exclusively (or be sure no request is running).
+    """
     Base.metadata.drop_all(engine, tables=_workspace_tables())
     Base.metadata.create_all(engine, tables=_workspace_tables())
     remove_all_claim_storage()
@@ -66,7 +69,7 @@ def initialize_workspace() -> None:
             session.commit()
             return
 
-    with _lock:
+    with WORKSPACE_LOCK.exclusive():
         if previous is not None:
             logger.warning(
                 "Claim workspace schema changed (%s -> %s); rebuilding the demo workspace",
@@ -87,11 +90,23 @@ def initialize_workspace() -> None:
 
 def reset_demo_workspace(actor: str | None = None) -> dict:
     """Clear all claims and stored originals, recreate the demo data and restart claim numbering."""
-    with _lock:
-        generated = generate_in_memory()  # fail before touching anything if the generator is broken
+    with WORKSPACE_LOCK.exclusive():
+        try:
+            # Everything that can fail on bad demo data happens before anything is deleted.
+            demo_data = sync_demo_data(generate_in_memory())
+        except Exception as exc:
+            with SessionLocal() as session:
+                record_event(
+                    session,
+                    "demo_reset_failed",
+                    "Demo reset failed before any data was removed",
+                    actor=actor,
+                    details={"error": f"{type(exc).__name__}: {str(exc)[:300]}"},
+                )
+                session.commit()
+            raise
         deleted = _count_rows()
         rebuild_workspace()
-        demo_data = sync_demo_data(generated)
         with SessionLocal() as session:
             next_claim_number = peek_next_claim_number(session)
             preserved_settings = session.scalar(select(func.count()).select_from(AppSetting))

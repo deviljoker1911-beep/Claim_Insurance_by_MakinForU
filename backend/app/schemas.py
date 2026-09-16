@@ -71,6 +71,14 @@ class ClaimCreate(BaseModel):
     discharge_date: date
     is_demo: bool = False
 
+    @field_validator("patient_name", "uhid", "hospital", "insurer", "tpa")
+    @classmethod
+    def _no_control_characters(cls, value: str | None) -> str | None:
+        # PostgreSQL rejects NUL outright; other control characters have no place in these fields.
+        if value is not None and any(ord(char) < 32 or ord(char) == 127 for char in value):
+            raise ValueError("must not contain control characters")
+        return value
+
     @field_validator("tpa")
     @classmethod
     def _blank_tpa_is_none(cls, value: str | None) -> str | None:
@@ -127,6 +135,7 @@ class ClaimDetail(ClaimOut):
 
 
 class FileErrorOut(BaseModel):
+    index: int
     filename: str
     error: str
 
@@ -196,6 +205,10 @@ class DemoDataStatus(BaseModel):
     generator_matches_manifest: bool
     mismatched_files: list[str]
     manifest_sha256: str
+
+
+class DemoResetRequest(BaseModel):
+    confirm: Literal[True]
 
 
 class DemoResetResult(BaseModel):

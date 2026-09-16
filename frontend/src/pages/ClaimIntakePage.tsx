@@ -60,19 +60,30 @@ export function ClaimIntakePage() {
       setPending((current) => current.filter((p) => !batch.has(p.key)))
       setNotice({ tone: 'success', text: `${plural(result.documents.length, 'document')} uploaded and stored.` })
     } catch (error) {
-      const reasons = fileErrors(error)
+      // The server reports rejected files by their position in the request.
+      const reasons = new Map(fileErrors(error).map((reason) => [accepted[reason.index]?.key, reason.error]))
       setPending((current) =>
         current.map((p) => {
           if (!batch.has(p.key)) return p
-          const reason = reasons.find((r) => r.filename === p.file.name)?.error
           return {
             ...p,
             state: 'failed',
-            error: reason ?? (reasons.length ? 'Not stored: another file in this upload was rejected' : errorMessage(error)),
+            error:
+              reasons.get(p.key) ??
+              (reasons.size ? 'Not stored: another file in this upload was rejected' : errorMessage(error)),
           }
         }),
       )
       setNotice({ tone: 'danger', text: errorMessage(error) })
+      refreshIfClaimMissing(error)
+    }
+  }
+
+  function refreshIfClaimMissing(error: unknown) {
+    // The claim may have been removed (e.g. by a demo reset in another tab): reload it so the
+    // page shows "Claim not found" instead of a stale claim.
+    if (error instanceof ApiError && error.status === 404) {
+      void queryClient.invalidateQueries({ queryKey: ['claims'] })
     }
   }
 
@@ -85,19 +96,23 @@ export function ClaimIntakePage() {
             ? { tone: 'success', text: `Demo document pack added: ${plural(result.attached_count, 'synthetic document')}.` }
             : { tone: 'info', text: 'The demo document pack is already attached to this claim.' },
         ),
-      onError: (error) => setNotice({ tone: 'danger', text: errorMessage(error) }),
+      onError: (error) => {
+        setNotice({ tone: 'danger', text: errorMessage(error) })
+        refreshIfClaimMissing(error)
+      },
     })
   }
 
   if (claim.status === 'pending') return <IntakeSkeleton />
-  if (claim.status === 'error') {
-    const notFound = claim.error instanceof ApiError && claim.error.status === 404
+  // A failed background refetch keeps showing the loaded claim, unless the claim no longer exists.
+  const notFound = claim.error instanceof ApiError && claim.error.status === 404
+  if (!claim.data || notFound) {
     return (
       <Card>
         <EmptyState
           icon={SearchX}
           title={notFound ? 'Claim not found' : 'The claim could not be loaded'}
-          description={notFound ? 'It may have been removed by a demo reset.' : claim.error.message}
+          description={notFound ? 'It may have been removed by a demo reset.' : claim.error?.message}
           action={<ButtonLink to="/claims">Back to My Claims</ButtonLink>}
         />
       </Card>
@@ -133,7 +148,7 @@ export function ClaimIntakePage() {
             <div className="space-y-4 p-5">
               <DocumentDropzone
                 onFiles={handleFiles}
-                disabled={uploading}
+                disabled={uploading || attachDemoPack.isPending}
                 actions={
                   <Button
                     variant="secondary"

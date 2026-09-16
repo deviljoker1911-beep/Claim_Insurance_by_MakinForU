@@ -38,10 +38,13 @@ function CopyableId({ id }: { id: string }) {
         aria-label="Copy document ID"
         className="rounded p-1 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
         onClick={() => {
-          void navigator.clipboard?.writeText(id).then(() => {
-            setCopied(true)
-            window.setTimeout(() => setCopied(false), 1200)
-          })
+          void navigator.clipboard
+            ?.writeText(id)
+            .then(() => {
+              setCopied(true)
+              window.setTimeout(() => setCopied(false), 1200)
+            })
+            .catch(() => undefined) // clipboard access can be denied; copying is a convenience only
         }}
       >
         {copied ? <Check className="size-3.5 text-emerald-600" /> : <Copy className="size-3.5" />}

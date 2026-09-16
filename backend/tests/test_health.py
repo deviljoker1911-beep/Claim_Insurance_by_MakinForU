@@ -23,6 +23,12 @@ def test_health_reports_ok(client):
     assert {"pymupdf", "rapidocr", "opencv", "docling", "paddleocr"} <= keys
 
 
+def test_health_supports_head_requests(client):
+    response = client.head("/api/health")
+    assert response.status_code == 200
+    assert response.content == b""
+
+
 def test_health_never_leaks_secrets(client):
     response = client.get("/api/health")
     assert SECRET_SENTINEL not in response.text
@@ -51,3 +57,34 @@ def test_check_database_reports_unreachable_postgres():
     assert status["dialect"] == "postgresql"
     assert status["error"]
     assert "nobody" not in str(status)
+
+
+def test_wrong_method_on_a_known_route_returns_405(client):
+    assert client.delete("/api/claims").status_code == 405
+    assert client.get("/api/demo/reset").status_code == 405
+    assert client.put("/api/health").status_code == 405
+
+
+def test_database_setup_is_retried_after_a_failed_start(client, monkeypatch):
+    from app import db
+    from app.services import workspace as workspace_service
+
+    real_initialize = workspace_service.initialize_workspace
+
+    def database_starting_up():
+        raise ConnectionError("database is starting up")
+
+    monkeypatch.setattr(db, "_initialized", False)
+    monkeypatch.setattr(db, "_last_init_attempt", 0.0)
+    monkeypatch.setattr(db, "INIT_RETRY_SECONDS", 0.0)
+    monkeypatch.setattr(workspace_service, "initialize_workspace", database_starting_up)
+
+    assert client.get("/api/claims").status_code == 503
+    health = client.get("/api/health").json()
+    assert health["status"] == "degraded"
+    assert "database is starting up" in health["database"]["error"]
+    assert client.head("/api/health").status_code == 503
+
+    monkeypatch.setattr(workspace_service, "initialize_workspace", real_initialize)
+    assert client.get("/api/claims").status_code == 200
+    assert client.get("/api/health").json()["status"] == "ok"

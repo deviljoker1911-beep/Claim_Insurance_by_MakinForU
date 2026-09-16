@@ -87,6 +87,8 @@ export interface ClaimInput {
 }
 
 export interface FileError {
+  /** Position of the file in the upload request (file names are not unique). */
+  index: number
   filename: string
   error: string
 }

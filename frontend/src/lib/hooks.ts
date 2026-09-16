@@ -57,8 +57,10 @@ export function useAttachDemoPack(claimId: string) {
 export function useResetDemo() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: () => api<DemoResetResult>('/demo/reset', { method: 'POST' }),
-    onSuccess: () => queryClient.invalidateQueries(),
+    mutationFn: () =>
+      api<DemoResetResult>('/demo/reset', { method: 'POST', body: JSON.stringify({ confirm: true }) }),
+    // Drop cached claims entirely (not just refetch the visible ones) so Back never shows a deleted claim.
+    onSuccess: () => Promise.all([queryClient.resetQueries({ queryKey: ['claims'] }), queryClient.invalidateQueries()]),
   })
 }
 

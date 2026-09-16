@@ -1,5 +1,5 @@
 import { CloudUpload, FolderOpen } from 'lucide-react'
-import { useRef, useState, type DragEvent, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type DragEvent, type ReactNode } from 'react'
 
 import { cx } from '../../lib/cx'
 import { ACCEPT_ATTRIBUTE, MAX_UPLOAD_MB } from '../../lib/uploads'
@@ -15,6 +15,19 @@ export function DocumentDropzone({ onFiles, disabled = false, actions }: Documen
   const inputRef = useRef<HTMLInputElement>(null)
   const dragDepth = useRef(0)
   const [dragging, setDragging] = useState(false)
+
+  useEffect(() => {
+    // A file dropped next to the zone would otherwise make the browser open it and leave the app.
+    const ignoreFileDrop = (event: globalThis.DragEvent) => {
+      if (event.dataTransfer?.types.includes('Files')) event.preventDefault()
+    }
+    window.addEventListener('dragover', ignoreFileDrop)
+    window.addEventListener('drop', ignoreFileDrop)
+    return () => {
+      window.removeEventListener('dragover', ignoreFileDrop)
+      window.removeEventListener('drop', ignoreFileDrop)
+    }
+  }, [])
 
   function handleDrag(event: DragEvent<HTMLDivElement>, delta: number) {
     event.preventDefault()
@@ -76,6 +89,7 @@ export function DocumentDropzone({ onFiles, disabled = false, actions }: Documen
         multiple
         accept={ACCEPT_ATTRIBUTE}
         disabled={disabled}
+        tabIndex={-1}
         data-testid="file-input"
         aria-label="Choose documents to upload"
         className="sr-only"

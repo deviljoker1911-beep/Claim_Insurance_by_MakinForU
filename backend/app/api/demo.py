@@ -7,7 +7,7 @@ from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from app.api.documents import intake_http_error
-from app.db import get_session
+from app.db import database_ready, get_session
 from app.demo_gen.generate import SET_NAMES
 from app.demo_gen.profile import claim_template
 from app.schemas import (
@@ -15,6 +15,7 @@ from app.schemas import (
     DemoClaimProfile,
     DemoFileOut,
     DemoFileSetOut,
+    DemoResetRequest,
     DemoResetResult,
     DemoSetName,
     DocumentOut,
@@ -23,6 +24,7 @@ from app.schemas import (
 from app.services.claims import get_claim_or_404
 from app.services.demo_pack import DemoDataError, attach_demo_set, demo_files
 from app.services.intake import IntakeError
+from app.services.locks import WORKSPACE_LOCK
 from app.services.workspace import reset_demo_workspace
 
 router = APIRouter(tags=["demo"])
@@ -31,21 +33,22 @@ SetQuery = Annotated[DemoSetName, Query(alias="set", description="initial | oper
 
 
 def _attach(claim_id: str, set_name: str, session: Session) -> DemoAttachResult:
-    claim = get_claim_or_404(session, claim_id)
-    try:
-        documents, skipped = attach_demo_set(session, claim, set_name)
-    except DemoDataError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
-    except IntakeError as exc:
-        raise intake_http_error(exc) from exc
-    return DemoAttachResult(
-        claim_id=claim.id,
-        set=set_name,
-        documents=[DocumentOut.model_validate(d) for d in documents],
-        skipped=[SkippedFile(filename=name, reason="Already attached to this claim") for name in skipped],
-        attached_count=len(documents),
-        skipped_count=len(skipped),
-    )
+    with WORKSPACE_LOCK.shared():
+        claim = get_claim_or_404(session, claim_id)
+        try:
+            documents, skipped = attach_demo_set(session, claim, set_name)
+        except DemoDataError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except IntakeError as exc:
+            raise intake_http_error(exc) from exc
+        return DemoAttachResult(
+            claim_id=claim.id,
+            set=set_name,
+            documents=[DocumentOut.model_validate(d) for d in documents],
+            skipped=[SkippedFile(filename=name, reason="Already attached to this claim") for name in skipped],
+            attached_count=len(documents),
+            skipped_count=len(skipped),
+        )
 
 
 @router.post("/claims/{claim_id}/demo-documents", response_model=DemoAttachResult)
@@ -65,9 +68,18 @@ def attach_demo_documents_via_get(
 
 
 @router.post("/demo/reset", response_model=DemoResetResult)
-def reset_demo() -> dict:
-    """Delete all claims and stored originals, recreate the demo data and restart claim numbering."""
-    return reset_demo_workspace()
+def reset_demo(confirmation: DemoResetRequest) -> dict:
+    """Delete all claims and stored originals, recreate the demo data and restart claim numbering.
+
+    Requires the JSON body {"confirm": true}: a JSON request cannot be sent cross-site without a
+    CORS preflight, so other web pages open in the operator's browser cannot trigger a reset.
+    """
+    if not database_ready():
+        raise HTTPException(status_code=503, detail="The database is unavailable. Check that PostgreSQL is running.")
+    try:
+        return reset_demo_workspace()
+    except DemoDataError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 @router.get("/demo/profile", response_model=DemoClaimProfile)

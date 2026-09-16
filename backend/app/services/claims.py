@@ -1,5 +1,7 @@
 """Claim creation and lookup."""
 
+import uuid
+
 from fastapi import HTTPException
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -45,8 +47,17 @@ def create_claim(session: Session, data: ClaimCreate, actor: str | None = None) 
     return claim
 
 
+def is_uuid(value: str) -> bool:
+    try:
+        uuid.UUID(value)
+    except ValueError:
+        return False
+    return True
+
+
 def get_claim_or_404(session: Session, claim_id: str) -> Claim:
-    claim = session.get(Claim, claim_id)
+    # IDs are UUIDs; anything else (including NUL bytes PostgreSQL would reject) cannot exist.
+    claim = session.get(Claim, claim_id) if is_uuid(claim_id) else None
     if claim is None:
         raise HTTPException(status_code=404, detail="Claim not found")
     return claim

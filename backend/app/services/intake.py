@@ -25,6 +25,7 @@ class IncomingFile:
 
 @dataclass
 class FileError:
+    index: int  # position of the file in the upload request (names are not unique)
     filename: str
     error: str
 
@@ -58,13 +59,13 @@ def ingest_files(
     staged: list[StagedFile] = []
     errors: list[FileError] = []
     try:
-        for incoming in files:
+        for index, incoming in enumerate(files):
+            # The client-declared type is informational only; keep it storable (column is 128 chars).
+            declared = "".join(ch for ch in (incoming.declared_content_type or "") if ch.isprintable())[:128] or None
             try:
-                staged.append(
-                    stage_file(incoming.stream, incoming.filename, incoming.declared_content_type, claim.id, new_id())
-                )
+                staged.append(stage_file(incoming.stream, incoming.filename, declared, claim.id, new_id()))
             except InvalidFile as exc:
-                errors.append(FileError(filename=clean_filename(incoming.filename), error=str(exc)))
+                errors.append(FileError(index=index, filename=clean_filename(incoming.filename), error=str(exc)))
         if errors:
             raise IntakeError(
                 f"{len(errors)} of {len(files)} file(s) could not be accepted. No files were stored.", errors

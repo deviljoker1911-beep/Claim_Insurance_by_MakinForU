@@ -1,5 +1,8 @@
 import hashlib
 import stat
+import threading
+import time
+from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
@@ -10,7 +13,7 @@ from tests.conftest import DEMO_CLAIM, TEST_DEMO_DATA, manifest, pack_files, upl
 
 
 def _reset(client) -> dict:
-    response = client.post("/api/demo/reset")
+    response = client.post("/api/demo/reset", json={"confirm": True})
     assert response.status_code == 200, response.text
     return response.json()
 
@@ -140,6 +143,15 @@ def test_get_request_is_supported_and_idempotent(client, claim):
     assert client.get(f"/api/claims/{claim['id']}").json()["document_count"] == 16
 
 
+def test_concurrent_demo_pack_requests_attach_the_set_once(client, claim):
+    url = f"/api/claims/{claim['id']}/demo-documents"
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        responses = list(pool.map(lambda _: client.post(url, params={"set": "initial"}), range(4)))
+    assert all(r.status_code == 200 for r in responses)
+    assert sorted(r.json()["attached_count"] for r in responses) == [0, 0, 0, 16]
+    assert client.get(f"/api/claims/{claim['id']}").json()["document_count"] == 16
+
+
 @pytest.mark.parametrize(
     ("set_name", "filename", "pages"),
     [("operative_note", "scan_0042.pdf", 2), ("anaesthesia_record", "Anaesthesia_Record.pdf", 2)],
@@ -182,3 +194,71 @@ def test_demo_files_can_be_listed_and_downloaded(client):
     assert hashlib.sha256(response.content).hexdigest() == scan["sha256"]
     assert client.get("/api/demo/files/initial/../../manifest.json").status_code == 404
     assert client.get("/api/demo/files/initial/unknown.pdf").status_code == 404
+
+
+def test_reset_requires_a_json_confirmation(client, workspace):
+    client.post("/api/claims", json=DEMO_CLAIM)
+    assert client.post("/api/demo/reset").status_code == 422
+    assert client.post("/api/demo/reset", json={"confirm": False}).status_code == 422
+    # A cross-site HTML form can only send form encodings, which are refused.
+    assert client.post("/api/demo/reset", data={"confirm": "true"}).status_code == 422
+    assert len(client.get("/api/claims").json()) == 1
+
+
+def test_unreadable_manifest_is_reported_and_repaired_by_reset(client, workspace):
+    manifest_path = TEST_DEMO_DATA / "manifest.json"
+    original = manifest_path.read_bytes()
+    claim_id = client.post("/api/claims", json=DEMO_CLAIM).json()["id"]
+    manifest_path.write_bytes(b"<<<<<<< HEAD\n{broken")
+    try:
+        assert client.get("/api/demo/files").status_code == 409
+        response = client.post(f"/api/claims/{claim_id}/demo-documents", params={"set": "initial"})
+        assert response.status_code == 409
+        assert "manifest is unreadable" in response.json()["detail"]
+        result = _reset(client)
+        repaired = manifest_path.read_bytes()
+    finally:
+        manifest_path.write_bytes(original)
+    assert repaired == original
+    assert result["demo_data"]["verified"] is True
+
+
+def test_failed_reset_removes_nothing_and_is_audited(client, workspace, monkeypatch):
+    from app.services import workspace as workspace_service
+
+    claim_id = client.post("/api/claims", json=DEMO_CLAIM).json()["id"]
+
+    def broken_generator():
+        raise RuntimeError("generator exploded")
+
+    monkeypatch.setattr(workspace_service, "generate_in_memory", broken_generator)
+    with pytest.raises(RuntimeError, match="generator exploded"):
+        client.post("/api/demo/reset", json={"confirm": True})
+    assert client.get(f"/api/claims/{claim_id}").status_code == 200
+    failures = client.get("/api/audit", params={"event_type": "demo_reset_failed"}).json()
+    assert len(failures) == 1
+    assert "generator exploded" in failures[0]["details"]["error"]
+
+
+def test_reset_waits_for_an_upload_in_progress(client, claim, monkeypatch):
+    from app.services import intake
+
+    real_stage_file = intake.stage_file
+    upload_started = threading.Event()
+
+    def slow_stage_file(*args, **kwargs):
+        upload_started.set()
+        time.sleep(0.2)
+        return real_stage_file(*args, **kwargs)
+
+    monkeypatch.setattr(intake, "stage_file", slow_stage_file)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        uploading = pool.submit(upload, client, claim["id"], pack_files()[:3])
+        assert upload_started.wait(5)
+        resetting = pool.submit(_reset, client)
+        upload_response = uploading.result()
+        reset_result = resetting.result()
+    assert upload_response.status_code == 201  # finished before the reset removed anything
+    assert reset_result["deleted"]["documents"] == 3
+    assert client.get("/api/claims").json() == []
+    assert not claims_root().exists() or not any(claims_root().iterdir())

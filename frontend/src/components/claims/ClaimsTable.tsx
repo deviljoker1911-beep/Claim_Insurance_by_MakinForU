@@ -54,7 +54,7 @@ export function ClaimsTable({ limit }: { limit?: number }) {
               </tr>
             ))}
 
-          {claims.status === 'error' && (
+          {claims.status === 'error' && !claims.data && (
             <tr>
               <td colSpan={COLUMNS.length}>
                 <EmptyState

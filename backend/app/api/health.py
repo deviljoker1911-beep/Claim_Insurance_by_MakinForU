@@ -4,11 +4,11 @@ from datetime import UTC, datetime
 from importlib import metadata
 from importlib.util import find_spec
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Response
 
 from app import __version__
 from app.config import get_settings
-from app.db import check_database
+from app.db import check_database, database_ready, init_error
 from app.schemas import DatabaseStatus, EngineStatus, HealthResponse, LLMStatus
 
 router = APIRouter(tags=["system"])
@@ -39,10 +39,24 @@ def detect_engines() -> list[EngineStatus]:
     return engines
 
 
+def database_status() -> DatabaseStatus:
+    database = DatabaseStatus(**check_database())
+    if database.ok and not database_ready():
+        reason = init_error() or "initialisation pending"
+        database = database.model_copy(update={"ok": False, "error": f"Database schema not initialised: {reason}"})
+    return database
+
+
+@router.head("/health", include_in_schema=False)
+def health_head() -> Response:
+    """Lightweight probe for monitors that use HEAD."""
+    return Response(status_code=200 if database_status().ok else 503)
+
+
 @router.get("/health", response_model=HealthResponse)
 def health() -> HealthResponse:
     settings = get_settings()
-    database = DatabaseStatus(**check_database())
+    database = database_status()
     return HealthResponse(
         status="ok" if database.ok else "degraded",
         app=settings.app_name,

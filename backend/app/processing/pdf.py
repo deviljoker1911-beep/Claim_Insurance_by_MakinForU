@@ -31,10 +31,16 @@ def inspect_pdf(path: Path) -> PdfInfo:
         except Exception as exc:  # noqa: BLE001 — PyMuPDF raises several error types for bad input
             raise UnreadablePdf("The PDF could not be read (corrupt or unsupported file)") from exc
         try:
+            # Malformed files can open successfully and still fail here (e.g. a looping page tree).
             if doc.needs_pass:
                 raise UnreadablePdf("Password-protected PDFs are not supported")
-            if doc.page_count < 1:
+            page_count = doc.page_count
+            if page_count < 1:
                 raise UnreadablePdf("The PDF has no pages")
-            return PdfInfo(page_count=doc.page_count, pdf_version=(doc.metadata or {}).get("format") or None)
+            return PdfInfo(page_count=page_count, pdf_version=(doc.metadata or {}).get("format") or None)
+        except UnreadablePdf:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            raise UnreadablePdf("The PDF could not be read (corrupt or unsupported file)") from exc
         finally:
             doc.close()

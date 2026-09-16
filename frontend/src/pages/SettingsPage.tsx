@@ -79,7 +79,8 @@ function DemoWorkspaceCard() {
       <div className="flex flex-wrap items-center justify-between gap-4 p-5">
         <p className="max-w-2xl text-sm leading-relaxed text-slate-600">
           Resetting deletes every claim, uploaded original and audit event, recreates the synthetic demo documents and
-          restarts claim numbering, so the next new claim is <span className="font-semibold">CLM-2026-00123</span>.
+          restarts claim numbering at its configured start (the next new claim is{' '}
+          <span className="font-semibold">CLM-2026-00123</span> by default).
           Application settings are kept.
         </p>
         {confirming ? (
@@ -140,7 +141,7 @@ function SettingsContent({ data }: { data: HealthResponse }) {
           value={`${DIALECTS[database.dialect] ?? database.dialect} ${database.ok ? 'connected' : 'unavailable'}`}
           detail={
             database.ok
-              ? [database.database, database.host && `${database.host}:${database.port}`, database.server_version && `v${database.server_version}`]
+              ? [database.database, database.host && (database.port ? `${database.host}:${database.port}` : database.host), database.server_version && `v${database.server_version}`]
                   .filter(Boolean)
                   .join(' · ')
               : (database.error ?? 'Connection failed')

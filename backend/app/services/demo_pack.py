@@ -6,10 +6,12 @@ manual upload; only the recorded `source` differs.
 
 import hashlib
 import json
+import threading
 from contextlib import ExitStack
 from dataclasses import dataclass
 from pathlib import Path
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.audit import record_event
@@ -22,6 +24,9 @@ from app.storage import sha256_file
 
 class DemoDataError(RuntimeError):
     pass
+
+
+_attach_lock = threading.Lock()
 
 
 @dataclass(frozen=True)
@@ -40,11 +45,35 @@ def _manifest_path() -> Path:
     return get_settings().demo_data_dir / MANIFEST_NAME
 
 
+MANIFEST_ENTRY_KEYS = ("filename", "path", "label", "media_type", "pages", "size_bytes", "sha256")
+
+
+def parse_manifest(raw: bytes) -> dict:
+    """Parse and structurally validate a manifest; raises DemoDataError if it is unusable."""
+    try:
+        manifest = json.loads(raw)
+        sets = manifest["sets"]
+        root = get_settings().demo_data_dir.resolve()
+        for entries in sets.values():
+            for entry in entries:
+                missing = [key for key in MANIFEST_ENTRY_KEYS if key not in entry]
+                if missing:
+                    raise KeyError(", ".join(missing))
+                if root not in (root / entry["path"]).resolve().parents:
+                    raise ValueError(f"path outside the demo data folder: {entry['path']}")
+    except (ValueError, KeyError, TypeError, AttributeError) as exc:
+        raise DemoDataError(
+            "The demo data manifest is unreadable. Reset the demo workspace to regenerate it."
+        ) from exc
+    return manifest
+
+
 def load_manifest() -> dict:
     try:
-        return json.loads(_manifest_path().read_text(encoding="utf-8"))
+        raw = _manifest_path().read_bytes()
     except FileNotFoundError as exc:
         raise DemoDataError("Demo data is missing. Reset the demo workspace to regenerate it.") from exc
+    return parse_manifest(raw)
 
 
 def demo_files(set_name: str, verify: bool = True) -> list[DemoFile]:
@@ -81,45 +110,58 @@ def attach_demo_set(
 ) -> tuple[list[Document], list[str]]:
     """Attach a demo set to a claim. Files from the same set that are already attached are skipped."""
     files = demo_files(set_name)
-    attached = {
-        document.original_filename
-        for document in claim.documents
-        if document.source == "demo_pack" and document.demo_set == set_name
-    }
-    pending = [file for file in files if file.filename not in attached]
-    skipped = [file.filename for file in files if file.filename in attached]
-    if not pending:
-        return [], skipped
+    # Check-then-insert must not interleave with another request for the same claim (double clicks,
+    # repeated GETs): serialise it in-process and, on PostgreSQL, also lock the claim row.
+    with _attach_lock:
+        session.execute(select(Claim.id).where(Claim.id == claim.id).with_for_update())
+        session.expire(claim, ["documents"])
+        attached = {
+            document.original_filename
+            for document in claim.documents
+            if document.source == "demo_pack" and document.demo_set == set_name
+        }
+        pending = [file for file in files if file.filename not in attached]
+        skipped = [file.filename for file in files if file.filename in attached]
+        if not pending:
+            session.rollback()
+            return [], skipped
 
-    with ExitStack() as stack:
-        incoming = [
-            IncomingFile(file.filename, stack.enter_context(file.path.open("rb")), file.media_type)
-            for file in pending
-        ]
-        documents = ingest_files(session, claim, incoming, source="demo_pack", demo_set=set_name, actor=actor)
-    record_event(
-        session,
-        "demo_pack_attached",
-        f"Demo document set '{set_name}' attached ({len(documents)} files)",
-        claim_id=claim.id,
-        actor=actor,
-        details={"set": set_name, "attached": [d.original_filename for d in documents], "skipped": skipped},
-    )
-    session.commit()
+        with ExitStack() as stack:
+            incoming = [
+                IncomingFile(file.filename, stack.enter_context(file.path.open("rb")), file.media_type)
+                for file in pending
+            ]
+            documents = ingest_files(session, claim, incoming, source="demo_pack", demo_set=set_name, actor=actor)
+        record_event(
+            session,
+            "demo_pack_attached",
+            f"Demo document set '{set_name}' attached ({len(documents)} files)",
+            claim_id=claim.id,
+            actor=actor,
+            details={"set": set_name, "attached": [d.original_filename for d in documents], "skipped": skipped},
+        )
+        session.commit()
     return documents, skipped
 
 
 def sync_demo_data(data: GeneratedData | None = None) -> dict:
     """Recreate the demo files from the deterministic generator and verify them against the manifest.
 
-    If the generator output no longer matches the committed manifest (for example after a library
-    upgrade), the committed files are left untouched and the mismatch is reported.
+    If the generator output no longer matches a valid committed manifest (for example after a
+    library upgrade), the committed files are left untouched and the mismatch is reported.
+    A missing or unreadable manifest is replaced with the generated one.
     """
     data = data or generate_in_memory()
     directory = get_settings().demo_data_dir
     manifest_path = directory / MANIFEST_NAME
-    committed = manifest_path.read_bytes() if manifest_path.is_file() else None
-    generator_matches = committed is None or committed == data.manifest_bytes
+    committed_bytes = manifest_path.read_bytes() if manifest_path.is_file() else None
+    committed = None
+    if committed_bytes is not None:
+        try:
+            committed = parse_manifest(committed_bytes)
+        except DemoDataError:
+            committed_bytes = None  # unreadable: regenerate it
+    generator_matches = committed_bytes is None or committed_bytes == data.manifest_bytes
 
     written = 0
     mismatched: list[str] = []
@@ -129,11 +171,12 @@ def sync_demo_data(data: GeneratedData | None = None) -> dict:
             if not target.is_file() or sha256_file(target) != sha256_bytes(content):
                 write_file(target, content)
                 written += 1
-        if committed is None:
+        if committed_bytes is None:
             write_file(manifest_path, data.manifest_bytes)
+            written += 1
         manifest = data.manifest
     else:
-        manifest = json.loads(committed)
+        manifest = committed
         generated = {e["path"]: e["sha256"] for entries in data.manifest["sets"].values() for e in entries}
         mismatched = sorted(
             e["path"] for entries in manifest["sets"].values() for e in entries if generated.get(e["path"]) != e["sha256"]

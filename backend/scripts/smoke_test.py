@@ -91,7 +91,7 @@ def main() -> int:
     check(dialect == "postgresql" or args.allow_sqlite, f"database is {dialect} {health['database']['server_version']}")
 
     print("2. Demo reset")
-    status, reset = call(base, "POST", "/api/demo/reset")
+    status, reset = post_json(base, "/api/demo/reset", {"confirm": True})
     check(status == 200, "reset accepted")
     check(reset["next_claim_number"] == "CLM-2026-00123", "next claim number is CLM-2026-00123")
     check(reset["demo_data"]["verified"] and reset["demo_data"]["files"] == 18, "18 demo files verified")

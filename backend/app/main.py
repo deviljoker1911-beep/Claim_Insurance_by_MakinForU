@@ -4,10 +4,12 @@ import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.exception_handlers import http_exception_handler
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app import __version__
 from app.api import audit, claims, demo, documents, health
@@ -22,10 +24,8 @@ settings = get_settings()
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     settings.storage_dir.mkdir(parents=True, exist_ok=True)
-    try:
-        init_db()
-    except Exception:  # noqa: BLE001 — keep serving; /api/health reports the database as degraded
-        logger.exception("Database initialisation failed")
+    # On failure the API keeps serving: /api/health reports "degraded" and setup is retried on demand.
+    init_db()
     yield
 
 
@@ -53,9 +53,12 @@ app.include_router(demo.router, prefix="/api")
 app.include_router(audit.router, prefix="/api")
 
 
-@app.api_route("/api/{path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"], include_in_schema=False)
-def api_not_found(path: str):
-    raise HTTPException(status_code=404, detail=f"Unknown API route: /api/{path}")
+@app.exception_handler(StarletteHTTPException)
+async def api_http_exception_handler(request: Request, exc: StarletteHTTPException):
+    # Unmatched /api paths get an explicit JSON message; a known path with the wrong method keeps its 405.
+    if exc.status_code == 404 and exc.detail == "Not Found" and request.url.path.startswith("/api/"):
+        return JSONResponse({"detail": f"Unknown API route: {request.url.path}"}, status_code=404)
+    return await http_exception_handler(request, exc)
 
 
 def _mount_frontend(dist: Path) -> None:
@@ -69,6 +72,8 @@ def _mount_frontend(dist: Path) -> None:
 
     @app.get("/{full_path:path}", include_in_schema=False)
     def spa(full_path: str) -> FileResponse:
+        if full_path == "api" or full_path.startswith("api/"):
+            raise HTTPException(status_code=404)
         candidate = (dist / full_path).resolve()
         if full_path and candidate.is_file() and dist.resolve() in candidate.parents:
             return FileResponse(candidate)

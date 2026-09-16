@@ -17,10 +17,15 @@ export class ApiError extends Error {
 function describe(detail: unknown, status: number): string {
   if (typeof detail === 'string' && detail) return detail
   if (Array.isArray(detail)) {
-    // FastAPI validation errors: [{ loc, msg, type }]
+    // FastAPI validation errors: [{ loc: ['body', 'field'], msg, type }]
     const messages = detail
-      .map((item) => (item && typeof item === 'object' && 'msg' in item ? String(item.msg) : ''))
-      .map((message) => message.replace(/^Value error, /, ''))
+      .map((item) => {
+        if (!item || typeof item !== 'object' || !('msg' in item)) return ''
+        const message = String(item.msg).replace(/^Value error, /, '')
+        const location = 'loc' in item && Array.isArray(item.loc) ? item.loc : []
+        const field = location.length > 1 ? location.at(-1) : null
+        return typeof field === 'string' ? `${field.replaceAll('_', ' ')}: ${message}` : message
+      })
       .filter(Boolean)
     if (messages.length) return messages.join('; ')
   }

@@ -9,6 +9,7 @@ import hashlib
 import os
 import shutil
 import stat
+import unicodedata
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 from typing import BinaryIO
@@ -46,11 +47,32 @@ def absolute_storage_path(relative: str) -> Path:
     return get_settings().storage_dir / relative
 
 
+MAX_FILENAME_LENGTH = 255
+# Bidirectional overrides can make "gpj.exe" display as "exe.jpg"; they are never needed in a name.
+BIDI_CONTROLS = frozenset("؜‎‏‪‫‬‭‮⁦⁧⁨⁩")
+
+
+def _filename_char(char: str) -> str:
+    category = unicodedata.category(char)
+    if category == "Cc" or char in BIDI_CONTROLS:
+        return ""
+    if category in ("Zs", "Zl", "Zp"):  # e.g. the narrow no-break space in macOS screenshot names
+        return " "
+    return char  # keeps letters, marks and joiners used by Indic scripts
+
+
 def clean_filename(name: str | None) -> str:
-    """Display name for an upload: no directory parts or control characters."""
+    """Display name for an upload: no directory parts or control characters, at most 255
+    characters. Long names are shortened before the extension so the extension survives."""
     base = PurePosixPath((name or "").replace("\\", "/")).name
-    base = "".join(ch for ch in base if ch.isprintable()).strip()
-    return base[:255] or "unnamed"
+    base = unicodedata.normalize("NFC", "".join(_filename_char(char) for char in base)).strip()
+    if len(base) > MAX_FILENAME_LENGTH:
+        stem, dot, extension = base.rpartition(".")
+        if stem and dot and len(extension) <= 10:
+            base = f"{stem[: MAX_FILENAME_LENGTH - len(extension) - 1]}.{extension}"
+        else:
+            base = base[:MAX_FILENAME_LENGTH]
+    return base or "unnamed"
 
 
 def sniff_content_type(head: bytes) -> str | None:

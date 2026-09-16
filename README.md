@@ -105,14 +105,14 @@ The synthetic claim and its deliberately seeded issues are described in [`demo_d
 
 | Endpoint | Description |
 |----------|-------------|
-| `GET /api/health` | API, database, document-processing engines and AI provider status |
+| `GET, HEAD /api/health` | API, database, document-processing engines and AI provider status (`degraded` / 503 until the database is ready) |
 | `GET, POST /api/claims` | List claims / create a claim (numbered `CLM-2026-#####`) |
 | `GET /api/claims/{id}` | Claim with its documents |
 | `GET /api/claims/{id}/audit` | Audit trail of a claim |
 | `POST /api/claims/{id}/documents` | Multipart upload of one or more PDF / PNG / JPG files. All files are stored or none are; each is stored read-only with its SHA-256. |
 | `POST, GET /api/claims/{id}/demo-documents?set=initial\|operative_note\|anaesthesia_record` | Attach a synthetic document set through the same upload pipeline. Files already attached are skipped. |
 | `GET /api/documents/{id}` · `GET /api/documents/{id}/file` | Document metadata · the unmodified original |
-| `POST /api/demo/reset` | Delete all claims and originals, recreate and verify the demo data, restart numbering. Application settings are kept. |
+| `POST /api/demo/reset` | Body `{"confirm": true}` (JSON only, so other web pages cannot trigger it). Delete all claims and originals, recreate and verify the demo data, restart numbering. Application settings are kept; in-flight requests finish first. |
 | `GET /api/demo/profile` · `GET /api/demo/files` | Demo claim details · list and download the demo files |
 | `GET /api/audit` | Workspace-wide audit events |
 | `/api/docs` | Interactive OpenAPI documentation |

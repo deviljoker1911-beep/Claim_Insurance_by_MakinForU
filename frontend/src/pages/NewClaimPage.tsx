@@ -10,6 +10,7 @@ import { PageHeader } from '../components/ui/PageHeader'
 import { errorMessage } from '../lib/api'
 import { cx } from '../lib/cx'
 import { fetchDemoClaimProfile, useCreateClaim } from '../lib/hooks'
+import type { DemoClaimProfile } from '../lib/types'
 
 type FieldName = 'patient_name' | 'uhid' | 'hospital' | 'insurer' | 'tpa' | 'admission_date' | 'discharge_date'
 type FormState = Record<FieldName, string>
@@ -31,12 +32,20 @@ const FIELDS: Array<{
   placeholder?: string
   wide?: boolean
   optional?: boolean
+  maxLength?: number
 }> = [
-  { name: 'patient_name', label: 'Patient name', type: 'text', placeholder: 'As on the hospital records' },
-  { name: 'uhid', label: 'UHID / IPD number', type: 'text', placeholder: 'e.g. UHID-000000' },
-  { name: 'hospital', label: 'Hospital', type: 'text', placeholder: 'Treating hospital', wide: true },
-  { name: 'insurer', label: 'Insurer', type: 'text', placeholder: 'Insurance company' },
-  { name: 'tpa', label: 'TPA', type: 'text', placeholder: 'Third-party administrator', optional: true },
+  { name: 'patient_name', label: 'Patient name', type: 'text', placeholder: 'As on the hospital records', maxLength: 200 },
+  { name: 'uhid', label: 'UHID / IPD number', type: 'text', placeholder: 'e.g. UHID-000000', maxLength: 64 },
+  { name: 'hospital', label: 'Hospital', type: 'text', placeholder: 'Treating hospital', wide: true, maxLength: 200 },
+  { name: 'insurer', label: 'Insurer', type: 'text', placeholder: 'Insurance company', maxLength: 200 },
+  {
+    name: 'tpa',
+    label: 'TPA',
+    type: 'text',
+    placeholder: 'Third-party administrator',
+    optional: true,
+    maxLength: 200,
+  },
   { name: 'admission_date', label: 'Admission date', type: 'date' },
   { name: 'discharge_date', label: 'Discharge date', type: 'date' },
 ]
@@ -59,13 +68,18 @@ export function NewClaimPage() {
   const navigate = useNavigate()
   const createClaim = useCreateClaim()
   const [form, setForm] = useState<FormState>(EMPTY)
-  const [isDemo, setIsDemo] = useState(false)
+  const [demoProfile, setDemoProfile] = useState<DemoClaimProfile | null>(null)
   const [submitted, setSubmitted] = useState(false)
   const [filling, setFilling] = useState(false)
   const [fillError, setFillError] = useState<string | null>(null)
 
   const errors = validate(form)
   const hasErrors = Object.keys(errors).length > 0
+  // Only a claim that still carries the synthetic patient's identity is flagged as a demo claim.
+  const isDemo =
+    demoProfile !== null &&
+    form.patient_name.trim() === demoProfile.patient_name &&
+    form.uhid.trim() === demoProfile.uhid
 
   async function fillDemoDetails() {
     setFilling(true)
@@ -73,7 +87,7 @@ export function NewClaimPage() {
     try {
       const profile = await fetchDemoClaimProfile()
       setForm({ ...profile, tpa: profile.tpa ?? '' })
-      setIsDemo(true)
+      setDemoProfile(profile)
     } catch (error) {
       setFillError(errorMessage(error))
     } finally {
@@ -142,6 +156,7 @@ export function NewClaimPage() {
                     type={field.type}
                     value={form[field.name]}
                     placeholder={field.placeholder}
+                    maxLength={field.maxLength}
                     aria-invalid={Boolean(error)}
                     onChange={(event) => setForm((current) => ({ ...current, [field.name]: event.target.value }))}
                     className={cx(

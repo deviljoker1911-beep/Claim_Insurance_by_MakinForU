@@ -65,7 +65,8 @@ demo-check: ## Verify demo_data/ matches the generator byte for byte
 	cd backend && RL_invariant=1 uv run python -m app.demo_gen --check
 
 reset: ## Reset the demo workspace through the running API (next claim: CLM-2026-00123)
-	curl -fsS -X POST http://$(BACKEND_HOST):$(BACKEND_PORT)/api/demo/reset | python3 -m json.tool
+	curl -fsS -X POST -H 'Content-Type: application/json' -d '{"confirm": true}' \
+		http://$(BACKEND_HOST):$(BACKEND_PORT)/api/demo/reset | python3 -m json.tool
 
 smoke: ## End-to-end smoke test against the running API and its database (resets the workspace)
 	cd backend && uv run python scripts/smoke_test.py --reset --base-url http://$(BACKEND_HOST):$(BACKEND_PORT)

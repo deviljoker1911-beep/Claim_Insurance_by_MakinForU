@@ -102,3 +102,16 @@ def test_claims_and_documents_persist_in_the_database(client, claim):
             assert all(len(d.sha256) == 64 for d in documents)
     finally:
         fresh_engine.dispose()
+
+
+def test_control_characters_are_rejected(client, workspace):
+    response = client.post("/api/claims", json={**DEMO_CLAIM, "patient_name": "Rajesh\x00Sharma"})
+    assert response.status_code == 422
+    assert "control characters" in response.text
+    assert client.get("/api/claims").json() == []
+
+
+def test_malformed_claim_ids_are_not_found(client, workspace):
+    for claim_id in ("not-a-uuid", "%00", "123"):
+        assert client.get(f"/api/claims/{claim_id}").status_code == 404
+        assert client.get(f"/api/claims/{claim_id}/audit").status_code == 404
