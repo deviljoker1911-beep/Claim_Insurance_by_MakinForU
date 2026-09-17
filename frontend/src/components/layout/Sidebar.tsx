@@ -78,7 +78,7 @@ export function Sidebar() {
           </p>
         </div>
         <ApiStatus variant="sidebar" />
-        <p className="px-1 text-[11px] text-slate-500">Prototype · by Makinforyou</p>
+        <p className="px-1 text-[11px] text-slate-500">Prototype · by MakinForU</p>
       </div>
     </aside>
   )

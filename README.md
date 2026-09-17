@@ -60,8 +60,8 @@ Document upload → OCR → Classification → Extraction → Claim structuring
 - PostgreSQL 16, either a local server or Docker via `make db-docker`
 
 ```bash
-git clone https://github.com/deviljoker1911-beep/Claim_Insurance_by_Makinforyou.git
-cd Claim_Insurance_by_Makinforyou
+git clone https://github.com/deviljoker1911-beep/Claim_Insurance_by_MakinForU.git
+cd Claim_Insurance_by_MakinForU
 make setup    # creates .env, installs backend + frontend dependencies, creates the database
 make dev      # API on http://127.0.0.1:8010, web app on http://127.0.0.1:5173
 ```
