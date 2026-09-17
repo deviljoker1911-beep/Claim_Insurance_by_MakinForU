@@ -1,0 +1,47 @@
+# Page quality thresholds (Phase 3).
+#
+# Every value here is measured from the page itself — its resolution, its ink and its
+# rendered pixels. Filenames and document labels are never used.
+version: 1
+
+render_dpi: 150 # page images rendered for review and for the pixel-based checks
+normalise_dpi: 150 # sharpness is compared after scaling a page to this resolution
+max_image_page_pixels: 4000 # longest side of a stored page image
+
+thresholds:
+  # Resolution
+  low_resolution_dpi: 150
+  very_low_resolution_dpi: 110
+  # Sharpness: 95th percentile of |Laplacian| over ink pixels at normalise_dpi.
+  # Clean digital pages measure 230-370; a soft, noisy 96 dpi scan measures under 50.
+  blurred_edge_steepness: 80
+  soft_edge_steepness: 140
+  # Blank page
+  blank_ink_coverage: 0.0015
+  blank_char_count: 12
+  # Cropped page: ink running into the extreme edge of the sheet
+  edge_band_fraction: 0.006
+  edge_ink_threshold: 110 # grey level counted as ink for edge checks (noise-tolerant)
+  edge_run_fraction: 0.05 # share of the edge that must be ink before it counts
+  cropped_min_edges: 2
+  # Geometry and OCR
+  skew_degrees: 0.75
+  severe_skew_degrees: 3.0
+  low_ocr_confidence: 0.80
+  poor_ocr_confidence: 0.60
+  min_words_for_text_page: 8
+
+severity:
+  low_resolution: attention
+  very_low_resolution: review
+  blurred_page: review
+  soft_focus: attention
+  blank_page: review
+  cropped_page: review
+  skewed_page: attention
+  severe_skew: review
+  low_ocr_confidence: attention
+  poor_ocr_confidence: review
+  no_text_recovered: review
+  signature_area_blank: review
+  concealed_text: review

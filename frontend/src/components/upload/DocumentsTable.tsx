@@ -1,9 +1,10 @@
-import { Check, Copy, FileImage, FileText, Inbox, X } from 'lucide-react'
+import { Check, Copy, EyeOff, FileImage, FileText, Inbox, LoaderCircle, X } from 'lucide-react'
 import { useState } from 'react'
 
 import { cx } from '../../lib/cx'
 import { formatBytes } from '../../lib/format'
-import type { ClaimDocument } from '../../lib/types'
+import type { ClaimDocument, DocumentProcessing } from '../../lib/types'
+import { DocumentSignals, DocumentTypeBadge } from '../analysis/DocumentTypeBadge'
 import { Badge } from '../ui/Badge'
 import { EmptyState } from '../ui/EmptyState'
 
@@ -15,7 +16,7 @@ export interface PendingUpload {
   error?: string
 }
 
-const COLUMNS = ['File', 'Size', 'Pages', 'Upload', 'Processing', 'Document ID']
+const COLUMNS = ['File', 'Size', 'Pages', 'Document type', 'Processing', 'Signals', 'Document ID']
 
 function FileIcon({ name }: { name: string }) {
   const Icon = /\.(png|jpe?g)$/i.test(name) ? FileImage : FileText
@@ -53,13 +54,76 @@ function CopyableId({ id }: { id: string }) {
   )
 }
 
+function ProgressBar({ fraction, tone = 'brand' }: { fraction: number; tone?: 'brand' | 'emerald' }) {
+  return (
+    <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-slate-100">
+      <div
+        className={cx(
+          'h-full rounded-full transition-[width] duration-200',
+          tone === 'brand' ? 'bg-brand-500' : 'bg-emerald-500',
+        )}
+        style={{ width: `${Math.max(4, fraction * 100)}%` }}
+      />
+    </div>
+  )
+}
+
+function seconds(milliseconds: number | null): string {
+  if (milliseconds === null) return ''
+  return milliseconds < 1000 ? `${milliseconds} ms` : `${(milliseconds / 1000).toFixed(1)} s`
+}
+
+/** What is happening to one stored document right now. */
+function ProcessingCell({ document, processing }: { document: ClaimDocument; processing?: DocumentProcessing }) {
+  const status = processing?.processing_status ?? document.processing_status
+  if (status === 'processed') {
+    return (
+      <span className="inline-flex items-center gap-2">
+        <Badge tone="success" dot>
+          Processed
+        </Badge>
+        <span className="text-xs tabular-nums text-slate-400">{seconds(processing?.processing_duration_ms ?? null)}</span>
+      </span>
+    )
+  }
+  if (status === 'failed') {
+    return (
+      <div className="max-w-[16rem]">
+        <Badge tone="danger" dot>
+          Failed
+        </Badge>
+        <p className="mt-1 text-xs text-rose-700">{processing?.processing_error ?? document.processing_error}</p>
+      </div>
+    )
+  }
+  if (status === 'queued') {
+    return <Badge tone="info">Queued</Badge>
+  }
+  if (status === 'processing') {
+    return (
+      <div className="w-36">
+        <div className="flex items-center justify-between text-xs text-brand-800">
+          <span className="inline-flex items-center gap-1.5 font-medium">
+            <LoaderCircle className="size-3 animate-spin" />
+            {processing?.stage_label ?? 'Processing'}
+          </span>
+          <span className="tabular-nums">{Math.round((processing?.progress ?? 0) * 100)}%</span>
+        </div>
+        <ProgressBar fraction={processing?.progress ?? 0} />
+      </div>
+    )
+  }
+  return <Badge tone="neutral">Awaiting analysis</Badge>
+}
+
 interface DocumentsTableProps {
   documents: ClaimDocument[]
   pending: PendingUpload[]
+  processing?: Map<string, DocumentProcessing>
   onDismiss: (key: string) => void
 }
 
-export function DocumentsTable({ documents, pending, onDismiss }: DocumentsTableProps) {
+export function DocumentsTable({ documents, pending, processing, onDismiss }: DocumentsTableProps) {
   if (documents.length === 0 && pending.length === 0) {
     return (
       <EmptyState
@@ -72,7 +136,7 @@ export function DocumentsTable({ documents, pending, onDismiss }: DocumentsTable
 
   return (
     <div className="overflow-x-auto">
-      <table className="w-full min-w-[680px] text-left text-sm" data-testid="documents-table">
+      <table className="w-full min-w-[860px] text-left text-sm" data-testid="documents-table">
         <thead>
           <tr className="border-b border-slate-100 bg-slate-50/60">
             {COLUMNS.map((column) => (
@@ -108,6 +172,7 @@ export function DocumentsTable({ documents, pending, onDismiss }: DocumentsTable
               </td>
               <td className="px-3 py-3 whitespace-nowrap text-slate-600 tabular-nums">{formatBytes(item.file.size)}</td>
               <td className="px-3 py-3 text-slate-400">—</td>
+              <td className="px-3 py-3 text-slate-400">—</td>
               <td className="px-3 py-3">
                 {item.state === 'uploading' ? (
                   <div className="w-32">
@@ -115,12 +180,7 @@ export function DocumentsTable({ documents, pending, onDismiss }: DocumentsTable
                       <span>Uploading</span>
                       <span className="tabular-nums">{Math.round(item.progress * 100)}%</span>
                     </div>
-                    <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-slate-100">
-                      <div
-                        className="h-full rounded-full bg-brand-500 transition-[width] duration-200"
-                        style={{ width: `${Math.max(4, item.progress * 100)}%` }}
-                      />
-                    </div>
+                    <ProgressBar fraction={item.progress} />
                   </div>
                 ) : (
                   <Badge tone="danger" dot>
@@ -146,45 +206,62 @@ export function DocumentsTable({ documents, pending, onDismiss }: DocumentsTable
             </tr>
           ))}
 
-          {documents.map((document) => (
-            <tr
-              key={document.id}
-              data-testid="document-row"
-              data-filename={document.filename}
-              data-upload-state={document.upload_status}
-              data-processing-state={document.processing_status}
-              data-document-id={document.id}
-            >
-              <td className="max-w-[15rem] px-3 py-3 2xl:max-w-[22rem]">
-                <div className="flex items-center gap-3">
-                  <FileIcon name={document.filename} />
-                  <div className="min-w-0">
-                    <p className="truncate font-medium text-slate-900" title={document.filename}>
-                      {document.filename}
-                    </p>
-                    <p className="truncate text-xs text-slate-500" title={`SHA-256 ${document.sha256}`}>
-                      {document.source === 'demo_pack' ? 'Demo pack · ' : ''}SHA-256 {document.sha256.slice(0, 12)}…
-                    </p>
+          {documents.map((document) => {
+            const state = processing?.get(document.id)
+            return (
+              <tr
+                key={document.id}
+                data-testid="document-row"
+                data-filename={document.filename}
+                data-upload-state={document.upload_status}
+                data-processing-state={state?.processing_status ?? document.processing_status}
+                data-processing-stage={state?.processing_stage ?? document.processing_stage ?? ''}
+                data-doc-type={state?.doc_type ?? document.doc_type ?? ''}
+                data-document-id={document.id}
+              >
+                <td className="max-w-[15rem] px-3 py-3 2xl:max-w-[22rem]">
+                  <div className="flex items-center gap-3">
+                    <FileIcon name={document.filename} />
+                    <div className="min-w-0">
+                      <p className="truncate font-medium text-slate-900" title={document.filename}>
+                        {document.filename}
+                      </p>
+                      <p className="truncate text-xs text-slate-500" title={`SHA-256 ${document.sha256}`}>
+                        {document.source === 'demo_pack' ? 'Demo pack · ' : ''}SHA-256 {document.sha256.slice(0, 12)}…
+                      </p>
+                    </div>
                   </div>
-                </div>
-              </td>
-              <td className="px-3 py-3 whitespace-nowrap text-slate-600 tabular-nums">
-                {formatBytes(document.size_bytes)}
-              </td>
-              <td className="px-3 py-3 text-slate-600 tabular-nums">{document.page_count ?? '—'}</td>
-              <td className="px-3 py-3">
-                <Badge tone="success" dot>
-                  Uploaded
-                </Badge>
-              </td>
-              <td className="px-3 py-3">
-                <Badge tone="neutral">{document.processing_status === 'pending' ? 'Awaiting analysis' : document.processing_status}</Badge>
-              </td>
-              <td className="px-3 py-3">
-                <CopyableId id={document.id} />
-              </td>
-            </tr>
-          ))}
+                </td>
+                <td className="px-3 py-3 whitespace-nowrap text-slate-600 tabular-nums">
+                  {formatBytes(document.size_bytes)}
+                </td>
+                <td className="px-3 py-3 text-slate-600 tabular-nums">
+                  {state?.page_count ?? document.page_count ?? '—'}
+                </td>
+                <td className="px-3 py-3">
+                  {state ? <DocumentTypeBadge processing={state} /> : <span className="text-slate-400">—</span>}
+                </td>
+                <td className="px-3 py-3">
+                  <ProcessingCell document={document} processing={state} />
+                </td>
+                <td className="px-3 py-3">
+                  {state ? (
+                    <DocumentSignals processing={state} />
+                  ) : document.concealed_text_count > 0 ? (
+                    <Badge tone="danger">
+                      <EyeOff className="size-3.5" />
+                      Covered text
+                    </Badge>
+                  ) : (
+                    <span className="text-slate-400">—</span>
+                  )}
+                </td>
+                <td className="px-3 py-3">
+                  <CopyableId id={document.id} />
+                </td>
+              </tr>
+            )
+          })}
         </tbody>
       </table>
     </div>

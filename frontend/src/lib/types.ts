@@ -24,6 +24,14 @@ export interface LLMStatus {
   mode: 'offline-deterministic' | 'remote'
 }
 
+export interface OcrStatus {
+  preference: string
+  engines: string[]
+  active: string | null
+  offline: boolean
+  note: string
+}
+
 export interface HealthResponse {
   status: 'ok' | 'degraded'
   app: string
@@ -33,6 +41,7 @@ export interface HealthResponse {
   server_time: string
   database: DatabaseStatus
   engines: EngineStatus[]
+  ocr: OcrStatus
   llm: LLMStatus
 }
 
@@ -54,6 +63,14 @@ export interface Claim {
   document_count: number
 }
 
+export interface QualityFlag {
+  code: string
+  severity: 'review' | 'attention' | 'info'
+  detail: string
+  pages: number[]
+  [measurement: string]: unknown
+}
+
 export interface ClaimDocument {
   id: string
   claim_id: string
@@ -65,6 +82,17 @@ export interface ClaimDocument {
   file_metadata: Record<string, unknown>
   upload_status: string
   processing_status: string
+  processing_stage: string | null
+  stage_label: string | null
+  processing_error: string | null
+  doc_type: string | null
+  doc_type_label: string | null
+  doc_type_confidence: number | null
+  text_source: string | null
+  ocr_engine: string | null
+  ocr_confidence: number | null
+  quality_flags: QualityFlag[]
+  concealed_text_count: number
   source: string
   demo_set: string | null
   uploaded_by: string
@@ -132,4 +160,62 @@ export interface DemoResetResult {
   next_claim_number: string
   preserved: string[]
   reset_at: string
+}
+
+/** --- Document intelligence (phase 3) --- */
+
+export interface ProcessingStage {
+  key: string
+  label: string
+}
+
+export interface FlagCounts {
+  total: number
+  review: number
+  attention: number
+}
+
+export interface DocumentProcessing {
+  document_id: string
+  filename: string
+  processing_status: 'pending' | 'queued' | 'processing' | 'processed' | 'failed'
+  processing_stage: string | null
+  stage_label: string | null
+  progress: number
+  doc_type: string | null
+  doc_type_label: string | null
+  doc_type_confidence: number | null
+  page_count: number | null
+  text_source: string | null
+  ocr_engine: string | null
+  ocr_confidence: number | null
+  quality_flag_counts: FlagCounts
+  concealed_text_count: number
+  processing_error: string | null
+  processing_duration_ms: number | null
+  processing_started_at: string | null
+  processing_completed_at: string | null
+}
+
+export interface WorkerStatus {
+  running: boolean
+  queue_depth: number
+  current_document_id: string | null
+  processed: number
+  failed: number
+}
+
+export interface ClaimProcessing {
+  claim_id: string
+  claim_number: string
+  claim_status: string
+  state: 'idle' | 'running' | 'partial' | 'completed' | 'completed_with_failures'
+  counts: Record<string, number>
+  document_count: number
+  progress: number
+  started_at: string | null
+  completed_at: string | null
+  stages: ProcessingStage[]
+  documents: DocumentProcessing[]
+  worker: WorkerStatus
 }

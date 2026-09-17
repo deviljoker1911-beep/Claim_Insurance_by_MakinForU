@@ -5,6 +5,7 @@ import type {
   Claim,
   ClaimDetail,
   ClaimInput,
+  ClaimProcessing,
   DemoAttachResult,
   DemoClaimProfile,
   DemoResetResult,
@@ -51,6 +52,31 @@ export function useAttachDemoPack(claimId: string) {
     mutationFn: (set: DemoSet) =>
       api<DemoAttachResult>(`/claims/${encodeURIComponent(claimId)}/demo-documents?set=${set}`, { method: 'POST' }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['claims'] }),
+  })
+}
+
+/** Live processing state of a claim. Polls only while the worker is busy. */
+export function useClaimProcessing(claimId: string, options: { enabled?: boolean } = {}) {
+  return useQuery({
+    queryKey: ['claims', claimId, 'processing'],
+    queryFn: () => api<ClaimProcessing>(`/claims/${encodeURIComponent(claimId)}/processing`),
+    enabled: Boolean(claimId) && options.enabled !== false,
+    retry: (count, error) => !(error instanceof ApiError && error.status === 404) && count < 2,
+    refetchInterval: (query) => (query.state.data?.state === 'running' ? 700 : false),
+    // Keep following a run even when the operator switches to another tab, so the timeline is
+    // up to date the moment they come back.
+    refetchIntervalInBackground: true,
+  })
+}
+
+export function useStartAnalysis(claimId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: () => api<ClaimProcessing>(`/claims/${encodeURIComponent(claimId)}/analyze`, { method: 'POST' }),
+    onSuccess: (state) => {
+      queryClient.setQueryData(['claims', claimId, 'processing'], state)
+      void queryClient.invalidateQueries({ queryKey: ['claims', claimId, 'processing'] })
+    },
   })
 }
 

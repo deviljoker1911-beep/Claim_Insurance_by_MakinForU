@@ -10,6 +10,7 @@ BACKEND_DIR = Path(__file__).resolve().parent.parent
 REPO_ROOT = BACKEND_DIR.parent
 
 LLM_PROVIDERS = ("demo", "anthropic", "openai")
+OCR_ENGINES = ("auto", "rapidocr", "demo_fixture", "none")
 DEFAULT_LLM_MODELS = {
     "demo": "deterministic-demo-v1",
     "anthropic": "claude-opus-5",
@@ -44,6 +45,15 @@ class Settings(BaseSettings):
     max_upload_files: int = 50
     max_upload_mb: int = 25
 
+    # --- Document intelligence (phase 3) ---
+    # Configuration for classification and quality checks.
+    config_dir: Path = BACKEND_DIR / "config"
+    # OCR engine order: auto prefers real OCR (RapidOCR) and falls back to the labelled
+    # demo fixtures; the other values pin one behaviour.
+    ocr_engine: str = "auto"
+    # Slow the visible processing stages down so a demo audience can follow the timeline.
+    demo_pacing_ms: int = 0
+
     # Identity recorded on audit events until authentication exists.
     operator_name: str = "Demo Operator"
 
@@ -57,7 +67,7 @@ class Settings(BaseSettings):
     openai_api_key: SecretStr = SecretStr("")
     openai_base_url: str = "https://api.openai.com/v1"
 
-    @field_validator("storage_dir", "frontend_dist", "demo_data_dir", mode="after")
+    @field_validator("storage_dir", "frontend_dist", "demo_data_dir", "config_dir", mode="after")
     @classmethod
     def _resolve_relative_to_backend(cls, value: Path) -> Path:
         return value if value.is_absolute() else (BACKEND_DIR / value).resolve()
@@ -69,6 +79,19 @@ class Settings(BaseSettings):
         if value not in LLM_PROVIDERS:
             raise ValueError(f"LLM_PROVIDER must be one of {', '.join(LLM_PROVIDERS)}")
         return value
+
+    @field_validator("ocr_engine", mode="after")
+    @classmethod
+    def _check_ocr_engine(cls, value: str) -> str:
+        value = value.strip().lower()
+        if value not in OCR_ENGINES:
+            raise ValueError(f"OCR_ENGINE must be one of {', '.join(OCR_ENGINES)}")
+        return value
+
+    @field_validator("demo_pacing_ms", mode="after")
+    @classmethod
+    def _clamp_pacing(cls, value: int) -> int:
+        return max(0, min(value, 2000))
 
     @property
     def effective_llm_model(self) -> str:

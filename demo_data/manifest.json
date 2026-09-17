@@ -2,7 +2,7 @@
   "name": "ClaimAI synthetic demo claim",
   "notice": "SYNTHETIC DEMO DOCUMENT — NOT A REAL RECORD",
   "synthetic": true,
-  "generator_version": 1,
+  "generator_version": 2,
   "note": "All people, organisations, identifiers and values are fictional. expected_doc_type and seeded_issues are test ground truth; the application never reads them.",
   "claim": {
     "patient_name": "Rajesh Sharma",
@@ -237,6 +237,25 @@
       }
     ]
   },
+  "ocr_fixtures": [
+    {
+      "path": "ocr_fixtures/53dc5d6306bafa84be01988ae3c28bd321e4f5c46cb8ab2c9cd76d4a2ca9fd3e.json",
+      "document": "01_Patient_ID.png",
+      "document_sha256": "53dc5d6306bafa84be01988ae3c28bd321e4f5c46cb8ab2c9cd76d4a2ca9fd3e",
+      "size_bytes": 4231,
+      "sha256": "154173a9dd5379aff11b0e1c071fc95c786f462ccc8310d168bad32723e6a425",
+      "lines": 18
+    },
+    {
+      "path": "ocr_fixtures/7f096318d2fa01f7ac0d6f3af86c3de8adbc587aa7e77b071729c28cc4bb4693.json",
+      "document": "09_USG_Abdomen_Scan.jpg",
+      "document_sha256": "7f096318d2fa01f7ac0d6f3af86c3de8adbc587aa7e77b071729c28cc4bb4693",
+      "size_bytes": 8896,
+      "sha256": "1fe6e0baf008264c3a087e2a78381639e12a8eb884b59ea1073a9943801c8748",
+      "lines": 38
+    }
+  ],
+  "ocr_fixture_note": "Text and geometry captured from the synthetic source document while the demo data was generated. This is NOT the output of an OCR engine. It lets the offline demo read the image documents on a machine where the OCR extras are not installed; results produced from it are labelled demo_fixture everywhere they appear.",
   "seeded_issues": [
     {
       "id": "missing_operative_note",

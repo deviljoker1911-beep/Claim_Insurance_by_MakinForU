@@ -7,12 +7,14 @@ interface BadgeProps {
   tone?: Tone
   dot?: boolean
   className?: string
+  title?: string
   children: ReactNode
 }
 
-export function Badge({ tone = 'neutral', dot = false, className, children }: BadgeProps) {
+export function Badge({ tone = 'neutral', dot = false, className, title, children }: BadgeProps) {
   return (
     <span
+      title={title}
       className={cx(
         'inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-medium whitespace-nowrap ring-1 ring-inset',
         badgeTones[tone],

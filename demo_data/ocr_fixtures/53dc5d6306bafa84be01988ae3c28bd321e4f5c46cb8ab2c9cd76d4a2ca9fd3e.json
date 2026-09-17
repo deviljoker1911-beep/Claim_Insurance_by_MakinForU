@@ -1,0 +1,194 @@
+{
+  "document": "01_Patient_ID.png",
+  "document_sha256": "53dc5d6306bafa84be01988ae3c28bd321e4f5c46cb8ab2c9cd76d4a2ca9fd3e",
+  "engine": "demo_fixture",
+  "synthetic": true,
+  "note": "Text and geometry captured from the synthetic source document while the demo data was generated. This is NOT the output of an OCR engine. It lets the offline demo read the image documents on a machine where the OCR extras are not installed; results produced from it are labelled demo_fixture everywhere they appear.",
+  "pages": [
+    {
+      "page": 1,
+      "lines": [
+        {
+          "text": "HEALTH e-CARD",
+          "bbox": [
+            0.72483,
+            0.04941,
+            0.95879,
+            0.09516
+          ],
+          "confidence": 1.0
+        },
+        {
+          "text": "Demo TPA",
+          "bbox": [
+            0.04121,
+            0.06831,
+            0.27042,
+            0.1402
+          ],
+          "confidence": 1.0
+        },
+        {
+          "text": "Insurer: Demo Health Insurance",
+          "bbox": [
+            0.63171,
+            0.11514,
+            0.95879,
+            0.15174
+          ],
+          "confidence": 1.0
+        },
+        {
+          "text": "Member Name:",
+          "bbox": [
+            0.25552,
+            0.2536,
+            0.41504,
+            0.28889
+          ],
+          "confidence": 1.0
+        },
+        {
+          "text": "RAJESH SHARMA",
+          "bbox": [
+            0.44509,
+            0.24547,
+            0.69671,
+            0.29122
+          ],
+          "confidence": 1.0
+        },
+        {
+          "text": "Member ID:",
+          "bbox": [
+            0.25552,
+            0.31503,
+            0.37669,
+            0.35032
+          ],
+          "confidence": 1.0
+        },
+        {
+          "text": "DTPA-MEM-0099812",
+          "bbox": [
+            0.44509,
+            0.31075,
+            0.68932,
+            0.35127
+          ],
+          "confidence": 1.0
+        },
+        {
+          "text": "Policy No.:",
+          "bbox": [
+            0.25552,
+            0.37646,
+            0.37053,
+            0.41175
+          ],
+          "confidence": 1.0
+        },
+        {
+          "text": "DHI/POL/2026/778812",
+          "bbox": [
+            0.44509,
+            0.37218,
+            0.7036,
+            0.4127
+          ],
+          "confidence": 1.0
+        },
+        {
+          "text": "DOB / Gender:",
+          "bbox": [
+            0.25552,
+            0.43789,
+            0.40885,
+            0.47318
+          ],
+          "confidence": 1.0
+        },
+        {
+          "text": "14-03-1979 / Male",
+          "bbox": [
+            0.44509,
+            0.43361,
+            0.65245,
+            0.47413
+          ],
+          "confidence": 1.0
+        },
+        {
+          "text": "Relationship: Self",
+          "bbox": [
+            0.25552,
+            0.49505,
+            0.48912,
+            0.53557
+          ],
+          "confidence": 1.0
+        },
+        {
+          "text": "Valid:",
+          "bbox": [
+            0.25552,
+            0.56076,
+            0.31612,
+            0.59605
+          ],
+          "confidence": 1.0
+        },
+        {
+          "text": "01-04-2025 to 31-03-2026",
+          "bbox": [
+            0.44509,
+            0.55648,
+            0.74195,
+            0.597
+          ],
+          "confidence": 1.0
+        },
+        {
+          "text": "Sum Insured:",
+          "bbox": [
+            0.25552,
+            0.62219,
+            0.39772,
+            0.65748
+          ],
+          "confidence": 1.0
+        },
+        {
+          "text": "Rs. 5,00,000.00",
+          "bbox": [
+            0.44509,
+            0.61791,
+            0.62549,
+            0.65843
+          ],
+          "confidence": 1.0
+        },
+        {
+          "text": "Photo on file",
+          "bbox": [
+            0.07919,
+            0.82617,
+            0.18457,
+            0.85623
+          ],
+          "confidence": 1.0
+        },
+        {
+          "text": "SYNTHETIC DEMO DOCUMENT — NOT A REAL RECORD",
+          "bbox": [
+            0.20209,
+            0.94368,
+            0.79791,
+            0.97831
+          ],
+          "confidence": 1.0
+        }
+      ]
+    }
+  ]
+}

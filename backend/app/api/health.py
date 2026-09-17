@@ -9,34 +9,78 @@ from fastapi import APIRouter, Response
 from app import __version__
 from app.config import get_settings
 from app.db import check_database, database_ready, init_error
-from app.schemas import DatabaseStatus, EngineStatus, HealthResponse, LLMStatus
+from app.schemas import DatabaseStatus, EngineStatus, HealthResponse, LLMStatus, OcrStatus
 
 router = APIRouter(tags=["system"])
 
-# (key, display name, import name, distribution name, role, optional)
+# (key, display name, import name, distribution names, role, optional)
 ENGINE_SPECS = [
-    ("pymupdf", "PyMuPDF", "pymupdf", "pymupdf", "PDF text layer and page rendering", False),
-    ("rapidocr", "RapidOCR (PP-OCR, ONNX)", "rapidocr", "rapidocr", "Image OCR", False),
-    ("opencv", "OpenCV", "cv2", "opencv-python-headless", "Image quality checks", False),
-    ("docling", "Docling", "docling", "docling", "Layout-aware conversion", True),
-    ("paddleocr", "PaddleOCR", "paddleocr", "paddleocr", "Native PaddleOCR", True),
+    ("pymupdf", "PyMuPDF", "pymupdf", ("pymupdf",), "PDF text layer and page rendering", False),
+    ("rapidocr", "RapidOCR (PP-OCR, ONNX)", "rapidocr", ("rapidocr",), "Image OCR", False),
+    ("onnxruntime", "ONNX Runtime", "onnxruntime", ("onnxruntime",), "Runs the OCR models locally", False),
+    (
+        "opencv",
+        "OpenCV",
+        "cv2",
+        ("opencv-python-headless", "opencv-python"),
+        "Image quality checks (sharpness, skew)",
+        False,
+    ),
+    ("docling", "Docling", "docling", ("docling",), "Layout-aware conversion (isolated adapter)", True),
+    ("paddleocr", "PaddleOCR", "paddleocr", ("paddleocr",), "Native PaddleOCR (isolated adapter)", True),
 ]
+
+
+def _version(distributions: tuple[str, ...]) -> str | None:
+    for distribution in distributions:
+        try:
+            return metadata.version(distribution)
+        except metadata.PackageNotFoundError:
+            continue
+    return None
 
 
 def detect_engines() -> list[EngineStatus]:
     engines = []
-    for key, name, module, dist, role, optional in ENGINE_SPECS:
+    for key, name, module, distributions, role, optional in ENGINE_SPECS:
         available = find_spec(module) is not None
-        version = None
-        if available:
-            try:
-                version = metadata.version(dist)
-            except metadata.PackageNotFoundError:
-                version = None
         engines.append(
-            EngineStatus(key=key, name=name, role=role, optional=optional, available=available, version=version)
+            EngineStatus(
+                key=key,
+                name=name,
+                role=role,
+                optional=optional,
+                available=available,
+                version=_version(distributions) if available else None,
+            )
         )
     return engines
+
+
+def ocr_status() -> OcrStatus:
+    """Which OCR path this installation will use, and whether it needs the network."""
+    from app.processing.ocr import ENGINE_DEMO_FIXTURE, ENGINE_RAPIDOCR, available_engines
+
+    settings = get_settings()
+    engines = available_engines()
+    preference = settings.ocr_engine
+    if preference == "none":
+        active = None
+    elif preference in engines:
+        active = preference
+    else:
+        active = next((engine for engine in (ENGINE_RAPIDOCR, ENGINE_DEMO_FIXTURE) if engine in engines), None)
+    return OcrStatus(
+        preference=preference,
+        engines=engines,
+        active=active,
+        offline=True,
+        note=(
+            "RapidOCR runs the PP-OCR models bundled with the package; no API key and no network "
+            "access are used. demo_fixture replays text captured from the synthetic demo documents "
+            "and is labelled as a fixture wherever it appears."
+        ),
+    )
 
 
 def database_status() -> DatabaseStatus:
@@ -66,6 +110,7 @@ def health() -> HealthResponse:
         server_time=datetime.now(UTC),
         database=database,
         engines=detect_engines(),
+        ocr=ocr_status(),
         llm=LLMStatus(
             provider=settings.llm_provider,
             model=settings.effective_llm_model,

@@ -20,7 +20,7 @@ from app.storage import remove_all_claim_storage
 
 logger = logging.getLogger("claimai.workspace")
 
-WORKSPACE_SCHEMA_VERSION = 2
+WORKSPACE_SCHEMA_VERSION = 3
 SCHEMA_VERSION_KEY = "workspace_schema_version"
 
 
@@ -90,6 +90,13 @@ def initialize_workspace() -> None:
 
 def reset_demo_workspace(actor: str | None = None) -> dict:
     """Clear all claims and stored originals, recreate the demo data and restart claim numbering."""
+    from app.worker import get_worker
+
+    # Drop queued work first: those documents are about to be deleted. The document being
+    # processed right now holds a shared lock, so the exclusive lock below waits for it.
+    dropped = get_worker().drain()
+    if dropped:
+        logger.info("Dropped %d queued document(s) before the workspace reset", dropped)
     with WORKSPACE_LOCK.exclusive():
         try:
             # Everything that can fail on bad demo data happens before anything is deleted.

@@ -1,0 +1,458 @@
+# Document classification knowledge base (Phase 3).
+#
+# Classification is CONTENT-DRIVEN: only text found inside the document is scored.
+# Filenames are never used to decide a type — a scanned file called "scan_0042.pdf"
+# must be recognised from its heading, not its name.
+#
+#   titles     regex matched against the heading lines of the first page (strong signal)
+#   keywords   regex matched against the whole document text (weak signals, additive)
+#   negatives  regex that argues against the type (e.g. a pharmacy bill is not a hospital bill)
+#   extract    which extractor groups run for the type
+#   signature_slots  signature areas the type is expected to carry
+version: 1
+
+scoring:
+  title_weight: 10.0
+  keyword_weight: 1.5
+  negative_weight: -6.0
+  title_lines: 12 # a heading must appear within this many non-empty lines of page 1
+  title_coverage: 0.70 # a heading match must cover this much of its heading cell ...
+  title_uppercase_coverage: 0.35 # ... or this much, when the cell is written in capitals
+  min_keyword_hits: 2 # keyword-only evidence needs at least this many distinct hits
+  title_confidence_base: 0.80
+  title_confidence_step: 0.02
+  keyword_confidence_base: 0.34
+  keyword_confidence_step: 0.06
+  max_confidence: 0.97
+
+signatures:
+  # A signature slot is a short caption under a horizontal rule. The caption alone is not
+  # evidence of a signature: the ink above the rule is what decides.
+  caption_patterns:
+    - "signature|signatory"
+    - "^(prepared|reported|verified|checked|issued|dispensed|authorised|authorized) by\\b"
+    - "^for .+"
+    - "\\b(surgeon|an(?:a)?esthetist|consultant|physician|doctor|resident|nurse|pharmacist|patholog\\w*|radiolog\\w*|technician|officer|witness|guardian|attendant|in-?charge)\\b"
+  rule_min_width: 90 # points
+  rule_max_width: 300
+  caption_max_chars: 48
+  caption_gap: 18 # caption sits this far below the rule at most
+  ink_band: 42 # signature ink is searched this far above the rule
+  ink_left_fraction: 0.66 # stamps sit on the right of a slot; ink is judged on the left
+  min_curve_segments: 4
+  min_ink_width: 18
+
+types:
+  - key: patient_id
+    label: Patient ID / insurance card
+    titles:
+      - "health\\s*e-?card"
+      - "\\bid card\\b"
+      - "insurance card"
+    keywords:
+      - "member id"
+      - "member name"
+      - "policy no"
+      - "sum insured"
+      - "\\btpa\\b"
+      - "valid (from|till|up ?to)"
+      - "relationship"
+    negatives: []
+    extract: [identity, cover]
+    signature_slots: []
+
+  - key: admission_record
+    label: Admission record
+    titles:
+      - "admission (record|form|note|sheet)"
+      - "in-?patient admission"
+    keywords:
+      - "date of admission"
+      - "time of admission"
+      - "admission type"
+      - "provisional diagnosis"
+      - "ward ?/ ?room"
+      - "payment mode"
+      - "next of kin"
+    negatives:
+      - "discharge summary"
+    extract: [identity, stay, clinical, cover]
+    signature_slots:
+      - key: patient_attendant
+        label: Patient / attendant
+        match: "signature of patient|patient ?/ ?attendant"
+        required: true
+      - key: admitting_officer
+        label: Admitting officer
+        match: "admitting officer"
+        required: false
+
+  - key: consultation
+    label: Consultation note
+    titles:
+      - "consultation (note|record|sheet)"
+      - "\\bopd note\\b"
+    keywords:
+      - "chief complaints"
+      - "date of consultation"
+      - "referred by"
+      - "impression"
+      - "planned procedure"
+      - "examination"
+    negatives:
+      - "operative note"
+      - "discharge summary"
+    extract: [identity, clinical]
+    signature_slots:
+      - key: consultant
+        label: Consultant
+        match: "consultant signature|^consultant$"
+        required: false
+
+  - key: pre_operative_assessment
+    label: Pre-operative assessment
+    titles:
+      - "pre-?operative (assessment|evaluation|checklist)"
+      - "surgical fitness"
+    keywords:
+      - "pre-?operative checklist"
+      - "planned date of surgery"
+      - "planned procedure"
+      - "asa grade"
+      - "fitness"
+      - "consent obtained"
+    negatives:
+      - "mallampati"
+    extract: [identity, clinical]
+    signature_slots:
+      - key: surgeon
+        label: Surgeon
+        match: "surgeon signature|signature of surgeon"
+        required: false
+
+  - key: consent
+    label: Informed consent
+    titles:
+      - "informed consent"
+      - "consent (form|for surgery|for anaesthesia)"
+    keywords:
+      - "i (hereby )?consent"
+      - "declaration by the patient"
+      - "risks"
+      - "explained (to me|by|in)"
+      - "type of anaesthesia"
+      - "additional procedure"
+    negatives: []
+    extract: [identity, clinical]
+    signature_slots:
+      - key: patient_guardian
+        label: Patient / guardian
+        match: "signature of patient|patient ?/ ?guardian"
+        required: true
+      - key: witness
+        label: Witness
+        match: "witness"
+        required: true
+      - key: surgeon
+        label: Surgeon
+        match: "signature of surgeon|surgeon signature"
+        required: true
+      - key: anaesthetist
+        label: Anaesthetist
+        match: "an(a)?esthetist"
+        required: false
+
+  - key: anaesthesia_assessment
+    label: Pre-anaesthetic assessment (PAC)
+    titles:
+      - "pre-?an(a)?esthetic (check-?up|assessment|evaluation)"
+      - "\\bpac\\b"
+    keywords:
+      - "mallampati"
+      - "asa physical status"
+      - "airway assessment"
+      - "mouth opening"
+      - "nil by mouth|last meal"
+      - "anaesthesia plan"
+      - "fit for (general )?an(a)?esthesia"
+    negatives:
+      - "intra-?operative an(a)?esthesia chart"
+      - "induction time"
+    extract: [identity, clinical]
+    signature_slots:
+      - key: anaesthetist
+        label: Anaesthetist
+        match: "an(a)?esthetist"
+        required: false
+
+  - key: operative_note
+    label: Operative note
+    titles:
+      - "operat(ive|ion) (note|record|summary)"
+      - "surgery note"
+    keywords:
+      - "procedure performed"
+      - "operative findings"
+      - "pre-?operative diagnosis"
+      - "post-?operative diagnosis"
+      - "assistant surgeon"
+      - "scrub nurse"
+      - "estimated blood loss"
+      - "wound class"
+      - "specimen"
+    negatives:
+      - "an(a)?esthesia record"
+    extract: [identity, stay, clinical]
+    signature_slots:
+      - key: surgeon
+        label: Surgeon
+        match: "surgeon|consultant"
+        required: true
+
+  - key: anaesthesia_record
+    label: Anaesthesia record
+    titles:
+      - "an(a)?esthesia record"
+      - "intra-?operative an(a)?esthesia (chart|record)"
+    keywords:
+      - "induction time"
+      - "extubation"
+      - "airway device"
+      - "drugs administered"
+      - "intra-?operative monitoring"
+      - "aldrete"
+      - "\\betco2\\b"
+      - "iv fluids"
+    negatives:
+      - "pre-?an(a)?esthetic check"
+      - "mallampati grade"
+    extract: [identity, clinical]
+    signature_slots:
+      - key: anaesthetist
+        label: Anaesthetist
+        match: "an(a)?esthetist"
+        required: true
+
+  - key: post_operative_note
+    label: Post-operative note
+    titles:
+      - "post-?operative (note|progress note|round)"
+    keywords:
+      - "post-?operative day"
+      - "post-?op orders"
+      - "pod ?[0-9]"
+    negatives:
+      - "nursing record"
+      - "operative findings"
+    extract: [identity, clinical]
+    signature_slots: []
+
+  - key: discharge_summary
+    label: Discharge summary
+    titles:
+      - "discharge (summary|record|slip)"
+    keywords:
+      - "date of discharge"
+      - "final diagnosis"
+      - "course in hospital"
+      - "condition (at|on) discharge"
+      - "discharge (medication|advice|instructions)"
+      - "follow-?up"
+      - "treatment given"
+    negatives: []
+    extract: [identity, stay, clinical]
+    signature_slots:
+      - key: consultant
+        label: Treating consultant
+        match: "consultant"
+        required: true
+
+  - key: investigation_report
+    label: Investigation report
+    titles:
+      - "(ultrasound|usg|sonograph\\w*) report"
+      - "(x-?ray|radiolog\\w+|ct scan|mri|echocardiograph\\w+|doppler) report"
+      - "investigation report"
+      - "imaging report"
+    keywords:
+      - "impression"
+      - "findings"
+      - "referred by"
+      - "gall ?bladder|abdomen|thorax"
+      - "no free fluid"
+      - "study (was )?performed"
+    negatives:
+      - "laboratory report"
+      - "reference range"
+    extract: [identity, investigation]
+    signature_slots:
+      - key: reporting_doctor
+        label: Reporting doctor
+        match: "reported by|radiologist"
+        required: false
+
+  - key: lab_report
+    label: Laboratory report
+    titles:
+      - "laborator\\w* report"
+      - "\\blab report\\b"
+      - "patholog\\w* report"
+      - "(haematolog\\w+|biochemistr\\w+) report"
+    keywords:
+      - "reference range"
+      - "haematolog\\w+"
+      - "biochemistr\\w+"
+      - "sample id"
+      - "collected on"
+      - "reported on"
+      - "specimen"
+    negatives:
+      - "ultrasound report"
+    extract: [identity, investigation]
+    signature_slots:
+      - key: pathologist
+        label: Pathologist
+        match: "patholog"
+        required: false
+
+  - key: prescription
+    label: Prescription
+    titles:
+      - "^prescription$"
+      - "discharge prescription"
+      - "\\brx\\b"
+    keywords:
+      - "tab\\.|cap\\.|syp\\.|inj\\."
+      - "once daily|twice daily|thrice daily|\\bod\\b|\\bbd\\b|\\btds\\b"
+      - "duration"
+      - "advice"
+      - "follow-?up"
+    negatives:
+      - "pharmacy bill"
+      - "bill no"
+    extract: [identity, clinical]
+    signature_slots:
+      - key: doctor
+        label: Doctor
+        match: "doctor|consultant"
+        required: false
+
+  - key: nursing_record
+    label: Nursing record
+    titles:
+      - "nursing (record|notes|chart)"
+      - "in-?patient nursing"
+    keywords:
+      - "vital signs chart"
+      - "medication administration"
+      - "primary nurse"
+      - "intake ?/ ?output"
+      - "nursing notes"
+    negatives: []
+    extract: [identity, stay]
+    signature_slots:
+      - key: nurse
+        label: Nurse
+        match: "nurse"
+        required: false
+
+  - key: hospital_bill
+    label: Hospital bill
+    titles:
+      - "(final )?(hospital|in-?patient) bill"
+      - "^final bill$"
+      - "bill of supply"
+    keywords:
+      - "room rent"
+      - "net payable"
+      - "sub ?total"
+      - "amount in words"
+      - "bill no"
+      - "surgeon (charges|fee)"
+      - "nursing charges"
+    negatives:
+      - "pharmacy bill"
+      - "operation theatre bill"
+      - "tax invoice"
+      - "drug licence"
+    extract: [identity, stay, billing]
+    signature_slots:
+      - key: authorised_signatory
+        label: Authorised signatory
+        match: "signatory"
+        required: false
+
+  - key: pharmacy_bill
+    label: Pharmacy bill
+    titles:
+      - "pharmacy (bill|invoice)"
+      - "medicine bill"
+    keywords:
+      - "drug licence"
+      - "batch"
+      - "expiry|\\bexp\\b"
+      - "items dispensed"
+      - "prescribing doctor"
+      - "tab\\.|cap\\.|inj\\."
+    negatives:
+      - "final hospital bill"
+      - "operation theatre bill"
+    extract: [identity, billing]
+    signature_slots:
+      - key: pharmacist
+        label: Pharmacist
+        match: "pharmacist"
+        required: false
+
+  - key: ot_bill
+    label: Operation theatre bill
+    titles:
+      - "operation theatre bill"
+      - "\\bot bill\\b"
+      - "theatre charges"
+    keywords:
+      - "ot charges|operation theatre charges"
+      - "surgeon (charges|fee)"
+      - "an(a)?esthetist (charges|fee)"
+      - "ot ?/ ?time"
+      - "consumables"
+    negatives:
+      - "pharmacy bill"
+    extract: [identity, billing, clinical]
+    signature_slots:
+      - key: authorised_signatory
+        label: Authorised signatory
+        match: "signatory"
+        required: false
+
+  - key: implant_invoice
+    label: Implant invoice
+    titles:
+      - "tax invoice"
+      - "implant invoice"
+      - "invoice cum delivery"
+    keywords:
+      - "implant"
+      - "lot no|\\blot\\b"
+      - "po reference"
+      - "clips|mesh|stent|prosthes\\w+|screw"
+      - "delivered to"
+      - "date of use"
+      - "tax reg"
+    negatives:
+      - "pharmacy bill"
+      - "room rent"
+    extract: [identity, billing]
+    signature_slots:
+      - key: vendor_signatory
+        label: Vendor signatory
+        match: "^for .+|signatory"
+        required: false
+
+  - key: other
+    label: Unclassified document
+    titles: []
+    keywords: []
+    negatives: []
+    extract: [identity]
+    signature_slots: []

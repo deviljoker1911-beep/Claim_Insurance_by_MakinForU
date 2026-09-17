@@ -12,9 +12,10 @@ from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app import __version__
-from app.api import audit, claims, demo, documents, health
+from app.api import analysis, audit, claims, demo, documents, health
 from app.config import get_settings
 from app.db import init_db
+from app.worker import get_worker
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger("claimai")
@@ -25,8 +26,14 @@ settings = get_settings()
 async def lifespan(_: FastAPI):
     settings.storage_dir.mkdir(parents=True, exist_ok=True)
     # On failure the API keeps serving: /api/health reports "degraded" and setup is retried on demand.
-    init_db()
-    yield
+    ready = init_db()
+    worker = get_worker()
+    # The worker requeues documents that a previous run left unfinished.
+    worker.start(recover=ready)
+    try:
+        yield
+    finally:
+        worker.stop()
 
 
 app = FastAPI(
@@ -49,6 +56,7 @@ app.add_middleware(
 app.include_router(health.router, prefix="/api")
 app.include_router(claims.router, prefix="/api")
 app.include_router(documents.router, prefix="/api")
+app.include_router(analysis.router, prefix="/api")
 app.include_router(demo.router, prefix="/api")
 app.include_router(audit.router, prefix="/api")
 

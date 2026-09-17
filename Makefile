@@ -4,6 +4,8 @@ SHELL := /bin/bash
 
 BACKEND_HOST ?= 127.0.0.1
 BACKEND_PORT ?= 8010
+# Pause between processing stages during the demo, so the timeline is readable.
+DEMO_PACING_MS ?= 120
 PYTHON ?= 3.12
 
 .PHONY: help setup env install install-backend install-frontend db db-docker \
@@ -48,7 +50,8 @@ build: ## Production build of the web app (type-check + bundle)
 	cd frontend && npm run build
 
 demo: build ## Single-port demo: API + built web app on http://127.0.0.1:8010
-	cd backend && SERVE_FRONTEND=true uv run uvicorn app.main:app --host $(BACKEND_HOST) --port $(BACKEND_PORT)
+	cd backend && SERVE_FRONTEND=true DEMO_PACING_MS=$(DEMO_PACING_MS) \
+		uv run uvicorn app.main:app --host $(BACKEND_HOST) --port $(BACKEND_PORT)
 
 test: test-backend lint build ## Backend tests, frontend lint and production build
 

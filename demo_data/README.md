@@ -52,3 +52,14 @@ The Operative Note and the Anaesthesia Record are deliberately **missing** from 
 | Anaesthesia_Record.pdf | Intra-operative anaesthesia record |
 
 Through the API, these packs are attached with `POST /api/claims/{id}/demo-documents?set=initial|operative_note|anaesthesia_record`, which uses the same upload pipeline as a manual upload. You can also drag the files into the upload screen yourself.
+
+## Offline OCR fixtures
+
+`ocr_fixtures/<document sha256>.json` holds the text and geometry of the two image
+documents (`01_Patient_ID.png` and `09_USG_Abdomen_Scan.jpg`), captured from their
+synthetic source pages while this data was generated.
+
+These files are **not OCR output**. They exist so the demo can read those documents on a
+machine where the OCR extras are not installed, and anything produced from them is labelled
+`demo_fixture` in the API, in the audit trail and in the interface. With RapidOCR installed
+(the default), the application runs real OCR instead and the fixtures are unused.

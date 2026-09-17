@@ -2,6 +2,7 @@
 
 import hashlib
 import io
+import json
 import os
 import re
 import subprocess
@@ -91,7 +92,7 @@ def test_two_separate_cli_runs_produce_identical_hashes(tmp_path):
             env={**os.environ, "RL_invariant": "1"},
         )
         hashes.append({p.relative_to(out).as_posix(): sha256(p.read_bytes()) for p in sorted(out.rglob("*")) if p.is_file()})
-    assert len(hashes[0]) == 19  # 18 documents + manifest
+    assert len(hashes[0]) == 21  # 18 documents + 2 offline OCR fixtures + manifest
     assert hashes[0] == hashes[1]
 
 
@@ -109,7 +110,7 @@ def test_cli_check_mode_verifies_the_committed_data():
         text=True,
     )
     assert result.returncode == 0, result.stdout + result.stderr
-    assert "OK: 18 documents checked" in result.stdout
+    assert "OK: 20 files checked" in result.stdout
 
 
 def test_manifest_hashes_match_the_files():
@@ -337,3 +338,41 @@ def test_anaesthesia_record_is_distinct_from_the_pre_anaesthetic_check_up():
     assert "Induction Time: 10:05" in record
     assert "PRE-ANAESTHETIC CHECK-UP (PAC)" in check_up
     assert "ANAESTHESIA RECORD" not in check_up
+
+
+def test_offline_ocr_fixtures_are_generated_for_the_image_documents(generated):
+    """The two image documents ship a labelled text fixture so the demo works without OCR."""
+    fixtures = generated.manifest["ocr_fixtures"]
+    assert [entry["document"] for entry in fixtures] == ["01_Patient_ID.png", "09_USG_Abdomen_Scan.jpg"]
+    for entry in fixtures:
+        content = generated.files[entry["path"]]
+        assert sha256(content) == entry["sha256"]
+        payload = json.loads(content)
+        assert payload["engine"] == "demo_fixture"
+        assert payload["synthetic"] is True
+        assert "NOT the output of an OCR engine" in payload["note"]
+        assert entry["document_sha256"] == payload["document_sha256"]
+        # The fixture is keyed by the document it belongs to, so it can never be applied elsewhere.
+        assert entry["path"].endswith(f"{entry['document_sha256']}.json")
+        lines = [line for page in payload["pages"] for line in page["lines"]]
+        assert len(lines) == entry["lines"] >= 15
+        for line in lines:
+            assert line["text"].strip()
+            assert len(line["bbox"]) == 4
+            assert all(0.0 <= value <= 1.0 for value in line["bbox"])
+
+
+def test_fixture_text_matches_the_source_document(generated):
+    """A fixture is captured from the synthetic source, so it carries that document's values."""
+    card = json.loads(generated.files[generated.manifest["ocr_fixtures"][0]["path"]])
+    text = " ".join(line["text"] for page in card["pages"] for line in page["lines"])
+    assert "HEALTH e-CARD" in text
+    assert "DTPA-MEM-0099812" in text
+
+
+def test_covered_text_is_not_captured_into_a_fixture(generated):
+    """Fixtures carry what a reader sees, so painted-over values cannot enter through them."""
+    for entry in generated.manifest["ocr_fixtures"]:
+        payload = json.loads(generated.files[entry["path"]])
+        text = " ".join(line["text"] for page in payload["pages"] for line in page["lines"])
+        assert "1,000.00" not in text

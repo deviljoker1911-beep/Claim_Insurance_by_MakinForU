@@ -1,8 +1,9 @@
 import { useQueryClient } from '@tanstack/react-query'
-import { ArrowLeft, FlaskConical, LoaderCircle, Lock, Play, SearchX } from 'lucide-react'
-import { useState, type ReactNode } from 'react'
+import { ArrowLeft, CircleCheck, FlaskConical, LoaderCircle, Play, ScanText, SearchX } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useParams } from 'react-router'
 
+import { ProcessingProgress, ProcessingTimeline } from '../components/analysis/ProcessingTimeline'
 import { ClaimStatusBadge } from '../components/claims/ClaimStatusBadge'
 import { ClaimSteps } from '../components/claims/ClaimSteps'
 import { Badge } from '../components/ui/Badge'
@@ -16,8 +17,8 @@ import { DocumentDropzone } from '../components/upload/DocumentDropzone'
 import { DocumentsTable, type PendingUpload } from '../components/upload/DocumentsTable'
 import { ApiError, errorMessage, fileErrors, uploadFiles } from '../lib/api'
 import { daysBetween, formatBytes, formatDate, formatDateTime, plural } from '../lib/format'
-import { useAttachDemoPack, useClaim } from '../lib/hooks'
-import type { ClaimDetail, UploadResult } from '../lib/types'
+import { useAttachDemoPack, useClaim, useClaimProcessing, useHealth, useStartAnalysis } from '../lib/hooks'
+import type { ClaimDetail, ClaimProcessing, DocumentProcessing, UploadResult } from '../lib/types'
 import { precheckFile } from '../lib/uploads'
 
 type NoticeState = { tone: 'success' | 'info' | 'danger'; text: string } | null
@@ -29,8 +30,44 @@ export function ClaimIntakePage() {
   const claim = useClaim(claimId)
   const queryClient = useQueryClient()
   const attachDemoPack = useAttachDemoPack(claimId)
+  const processing = useClaimProcessing(claimId)
+  const startAnalysis = useStartAnalysis(claimId)
   const [pending, setPending] = useState<PendingUpload[]>([])
   const [notice, setNotice] = useState<NoticeState>(null)
+
+  const state = processing.data
+  const running = state?.state === 'running'
+  const documentStates = useMemo(() => {
+    const map = new Map<string, DocumentProcessing>()
+    for (const document of state?.documents ?? []) map.set(document.document_id, document)
+    return map
+  }, [state])
+
+  // When a run finishes, refresh the claim so the stored classification and signals are shown.
+  const previousState = useRef<string | undefined>(undefined)
+  useEffect(() => {
+    if (previousState.current === 'running' && state && state.state !== 'running') {
+      void queryClient.invalidateQueries({ queryKey: ['claims', claimId] })
+      const processed = state.counts.processed ?? 0
+      const failed = state.counts.failed ?? 0
+      setNotice(
+        failed > 0
+          ? { tone: 'info', text: `Analysis finished: ${plural(processed, 'document')} processed, ${failed} could not be read.` }
+          : { tone: 'success', text: `Analysis finished: ${plural(processed, 'document')} processed.` },
+      )
+    }
+    previousState.current = state?.state
+  }, [state, claimId, queryClient])
+
+  function runAnalysis() {
+    setNotice(null)
+    startAnalysis.mutate(undefined, {
+      onError: (error) => {
+        setNotice({ tone: 'danger', text: errorMessage(error) })
+        refreshIfClaimMissing(error)
+      },
+    })
+  }
 
   async function handleFiles(files: File[]) {
     setNotice(null)
@@ -136,7 +173,7 @@ export function ClaimIntakePage() {
           </ButtonLink>
         }
       />
-      <ClaimSteps current={1} />
+      <ClaimSteps current={state && state.state !== 'idle' ? 2 : 1} />
 
       <div className="grid grid-cols-1 items-start gap-6 xl:grid-cols-[minmax(0,1fr)_340px]">
         <div className="space-y-6">
@@ -185,6 +222,7 @@ export function ClaimIntakePage() {
             <DocumentsTable
               documents={data.documents}
               pending={pending}
+              processing={documentStates}
               onDismiss={(key) => setPending((current) => current.filter((p) => p.key !== key))}
             />
           </Card>
@@ -192,29 +230,86 @@ export function ClaimIntakePage() {
 
         <aside className="space-y-6 xl:sticky xl:top-24">
           <ClaimInformation claim={data} />
-          <Card className="p-5">
-            <p className="text-[15px] font-semibold text-slate-900">Run analysis</p>
-            <p className="mt-1 text-sm text-slate-500">
-              OCR, document classification, data extraction and cross-document validation of the uploaded documents.
-            </p>
-            <Button
-              className="mt-4 w-full"
-              disabled
-              title="The analysis pipeline is enabled in the next build phase"
-              data-testid="start-analysis"
-            >
-              <Play className="size-4" />
-              Start Analysis
-            </Button>
-            <p className="mt-2 flex items-center justify-center gap-1.5 text-xs text-slate-400">
-              <Lock className="size-3" />
-              {data.documents.length ? `${plural(data.documents.length, 'document')} ready · ` : ''}
-              Available in the next build phase
-            </p>
-          </Card>
+          <AnalysisPanel
+            documentCount={data.documents.length}
+            state={state}
+            running={running}
+            pendingUploads={uploading}
+            starting={startAnalysis.isPending}
+            onStart={runAnalysis}
+          />
         </aside>
       </div>
     </>
+  )
+}
+
+interface AnalysisPanelProps {
+  documentCount: number
+  state: ClaimProcessing | undefined
+  running: boolean
+  pendingUploads: boolean
+  starting: boolean
+  onStart: () => void
+}
+
+function AnalysisPanel({ documentCount, state, running, pendingUploads, starting, onStart }: AnalysisPanelProps) {
+  const health = useHealth()
+  const waiting = (state?.counts.pending ?? 0) + (state?.counts.failed ?? 0)
+  const analysed = state?.counts.processed ?? 0
+  const finished = state ? state.state === 'completed' || state.state === 'completed_with_failures' : false
+  const canStart = documentCount > 0 && !running && !starting && !pendingUploads && waiting > 0
+  const label = running
+    ? 'Analysing…'
+    : finished
+      ? 'Analysis complete'
+      : analysed > 0 && waiting > 0
+        ? `Analyse ${plural(waiting, 'new document')}`
+        : 'Start Analysis'
+  const ocr = health.data?.ocr
+
+  return (
+    <Card className="p-5" data-testid="analysis-panel" data-analysis-state={state?.state ?? 'idle'}>
+      <p className="text-[15px] font-semibold text-slate-900">Run analysis</p>
+      <p className="mt-1 text-sm text-slate-500">
+        Text extraction, OCR for scans, quality checks, document classification and field extraction. Every value keeps
+        the page it came from.
+      </p>
+      <Button className="mt-4 w-full" onClick={onStart} disabled={!canStart} data-testid="start-analysis">
+        {running || starting ? (
+          <LoaderCircle className="size-4 animate-spin" />
+        ) : finished ? (
+          <CircleCheck className="size-4" />
+        ) : (
+          <Play className="size-4" />
+        )}
+        {label}
+      </Button>
+
+      {state && state.state !== 'idle' ? (
+        <div className="mt-4 space-y-4">
+          <ProcessingProgress state={state} />
+          <ProcessingTimeline state={state} />
+        </div>
+      ) : (
+        <p className="mt-2 text-center text-xs text-slate-400">
+          {documentCount ? `${plural(documentCount, 'document')} ready for analysis` : 'Upload documents to analyse'}
+        </p>
+      )}
+
+      {ocr && (
+        <p className="mt-4 flex items-start gap-1.5 border-t border-slate-100 pt-3 text-xs text-slate-400">
+          <ScanText className="mt-0.5 size-3.5 shrink-0" />
+          <span>
+            {ocr.active === 'rapidocr'
+              ? 'OCR: RapidOCR, running locally with no API key'
+              : ocr.active === 'demo_fixture'
+                ? 'OCR: deterministic demo fixture (no OCR engine installed)'
+                : 'OCR is disabled'}
+          </span>
+        </p>
+      )}
+    </Card>
   )
 }
 

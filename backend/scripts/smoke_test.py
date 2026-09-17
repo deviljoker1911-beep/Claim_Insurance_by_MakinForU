@@ -11,6 +11,7 @@ import hashlib
 import json
 import stat
 import sys
+import time
 import urllib.error
 import urllib.request
 import uuid
@@ -23,7 +24,7 @@ from sqlalchemy.orm import Session  # noqa: E402
 
 from app.config import get_settings  # noqa: E402
 from app.db import make_engine  # noqa: E402
-from app.models import AuditEvent, Claim, Document  # noqa: E402
+from app.models import AuditEvent, Claim, Document, DocumentBill, DocumentPage, ExtractedField  # noqa: E402
 
 
 class SmokeFailure(AssertionError):
@@ -124,7 +125,54 @@ def main() -> int:
         status, later = call(base, "POST", f"/api/claims/{second['id']}/demo-documents?set={set_name}")
         check([d["filename"] for d in later["documents"]] == [filename], f"{set_name} set attached ({filename})")
 
-    print(f"6. Database and storage ({dialect})")
+    print("6. Document intelligence")
+    status, state = call(base, "POST", f"/api/claims/{second['id']}/analyze")
+    check(status == 202 and state["counts"]["queued"] == 18, f"18 documents queued: {state['counts']}")
+    deadline = time.monotonic() + 300
+    while time.monotonic() < deadline:
+        status, state = call(base, "GET", f"/api/claims/{second['id']}/processing")
+        if state["state"] != "running":
+            break
+        time.sleep(0.4)
+    check(state["state"] == "completed", f"analysis finished without failures: {state['counts']}")
+    check(state["claim_status"] == "processed", "claim moved to processed")
+
+    expected_types = {e["filename"]: e["expected_doc_type"] for entries in manifest["sets"].values() for e in entries}
+    processed = {d["filename"]: d for d in state["documents"]}
+    wrong = {name: (d["doc_type"], expected_types[name]) for name, d in processed.items() if d["doc_type"] != expected_types[name]}
+    check(not wrong, f"all 18 documents classified from their content ({len(processed)} documents)")
+    check(processed["scan_0042.pdf"]["doc_type"] == "operative_note", "scan_0042.pdf recognised as an operative note")
+    check(
+        processed["05_Anaesthesia_Assessment.pdf"]["doc_type"] == "anaesthesia_assessment"
+        and processed["Anaesthesia_Record.pdf"]["doc_type"] == "anaesthesia_record",
+        "anaesthesia assessment and record kept apart",
+    )
+    check(
+        processed["09_USG_Abdomen_Scan.jpg"]["ocr_engine"] in {"rapidocr", "demo_fixture"},
+        f"the scanned report went through OCR ({processed['09_USG_Abdomen_Scan.jpg']['ocr_engine']})",
+    )
+    check(processed["09_USG_Abdomen_Scan.jpg"]["quality_flag_counts"]["total"] >= 2, "poor-quality scan flagged")
+    check(processed["15_Implant_Invoice.pdf"]["concealed_text_count"] == 1, "covered text reported on the implant invoice")
+
+    status, invoice = call(base, "GET", f"/api/documents/{processed['15_Implant_Invoice.pdf']['document_id']}/analysis")
+    check(invoice["bill"]["line_items"][0]["rate"] == "1100.00", "the visible implant rate is extracted (1,100.00)")
+    check(invoice["bill"]["total"] == "6600.00", "invoice total is 6,600.00")
+    leaked = [f["key"] for f in invoice["fields"] if "1,000.00" in (f["value"] or "") + f["snippet"]]
+    check(not leaked, "covered text stays out of every extracted value")
+    check(all(f["evidence_available"] for f in invoice["fields"]), "every extracted value has page evidence")
+
+    status, consent = call(base, "GET", f"/api/documents/{processed['16_Consent_Form.pdf']['document_id']}/analysis")
+    patient_slot = next(s for s in consent["signatures"]["slots"] if s["key"] == "patient_guardian")
+    check(patient_slot["signed"] is False and patient_slot["found"], "blank patient signature area detected on the consent form")
+
+    status, bill = call(base, "GET", f"/api/documents/{processed['12_Main_Hospital_Bill.pdf']['document_id']}/analysis")
+    check(len(bill["bill"]["line_items"]) == 10 and bill["bill"]["total"] == "114360.00", "hospital bill read: 10 lines, 1,14,360.00")
+
+    page_url = f"/api/documents/{processed['06_Discharge_Summary.pdf']['document_id']}/pages/3/image"
+    status, image = call(base, "GET", page_url)
+    check(status == 200 and image[:8] == b"\x89PNG\r\n\x1a\n", "page images are served as PNG")
+
+    print(f"7. Database and storage ({dialect})")
     engine = make_engine(settings.database_url)
     try:
         with Session(engine) as session:
@@ -142,9 +190,40 @@ def main() -> int:
             check(True, "all 34 stored originals are read-only (0444) and match their SHA-256")
             counts = dict(session.execute(select(AuditEvent.event_type, func.count()).group_by(AuditEvent.event_type)).all())
             check(
-                counts == {"demo_reset": 1, "claim_created": 2, "document_uploaded": 34, "demo_pack_attached": 3},
+                counts
+                == {
+                    "demo_reset": 1,
+                    "claim_created": 2,
+                    "document_uploaded": 34,
+                    "demo_pack_attached": 3,
+                    "claim_analysis_started": 1,
+                    "document_processed": 18,
+                    "claim_analysis_completed": 1,
+                },
                 f"audit events: {counts}",
             )
+            pages = session.scalar(select(func.count()).select_from(DocumentPage))
+            expected_pages = sum(e["pages"] for entries in manifest["sets"].values() for e in entries)
+            check(pages == expected_pages, f"{pages} page rows stored (one per page of the 18 documents)")
+            fields = session.scalar(select(func.count()).select_from(ExtractedField))
+            check(fields > 120, f"{fields} extracted fields stored with evidence")
+            bills = session.scalar(select(func.count()).select_from(DocumentBill))
+            check(bills == 4, f"{bills} bills read (hospital, pharmacy, OT, implant invoice)")
+            unprocessed = session.scalar(
+                select(func.count()).select_from(Document).where(Document.processing_status != "processed", Document.claim_id == second["id"])
+            )
+            check(unprocessed == 0, "every document of the analysed claim is marked processed")
+            images = list((settings.storage_dir / "claims" / second["id"] / "pages").rglob("*.png"))
+            check(len(images) == expected_pages, f"{len(images)} rendered page images on disk")
+            originals_before = session.scalars(
+                select(Document.storage_path).where(Document.claim_id == second["id"])
+            ).all()
+            for relative in originals_before:
+                path = settings.storage_dir / relative
+                check_mode = stat.S_IMODE(path.stat().st_mode)
+                if check_mode != 0o444:
+                    raise SmokeFailure(f"{path} is no longer read-only after analysis ({oct(check_mode)})")
+            check(True, "originals are still read-only after analysis")
     finally:
         engine.dispose()
 
