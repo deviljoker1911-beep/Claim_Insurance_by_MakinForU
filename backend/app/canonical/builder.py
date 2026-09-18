@@ -231,7 +231,7 @@ def _documents_section(documents: list[Document], fields: list[ExtractedField]) 
 def _investigations(documents: list[Document], fields: list[ExtractedField], by_id: dict[str, Document]) -> dict:
     items = []
     for document in documents:
-        if document.doc_type not in canonical_keys.INVESTIGATION_DOC_TYPES:
+        if document.excluded or document.doc_type not in canonical_keys.INVESTIGATION_DOC_TYPES:
             continue
         values = {
             spec.name: _value(spec, fields, by_id, document_id=document.id)
@@ -254,7 +254,8 @@ def _bills(bills: list[DocumentBill], fields: list[ExtractedField], by_id: dict[
     items = []
     for bill in sorted(bills, key=lambda row: (by_id[row.document_id].original_filename if row.document_id in by_id else "")):
         document = by_id.get(bill.document_id)
-        if document is None:
+        if document is None or document.excluded:
+            # An excluded document states nothing: not its values, and not its bill.
             continue
         values = {
             spec.name.removeprefix("bill_"): _value(spec, fields, by_id, document_id=document.id)

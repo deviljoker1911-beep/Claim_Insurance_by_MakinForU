@@ -25,7 +25,7 @@ export function DocumentTypeBadge({ processing }: { processing: DocumentProcessi
   )
 }
 
-/** Quality signals and covered text, as counts. Findings themselves arrive in a later phase. */
+/** Quality signals and covered text, as counts. The findings they feed are listed separately. */
 export function DocumentSignals({ processing }: { processing: DocumentProcessing }) {
   const { review, attention } = processing.quality_flag_counts
   const concealed = processing.concealed_text_count

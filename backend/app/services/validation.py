@@ -134,6 +134,15 @@ def refresh(session: Session, claim: Claim, *, actor: str | None = None, state: 
     result = engine.run(session, claim, state)
     now = utcnow()
 
+    stored = stored_run(session, claim.id)
+    # Replaying the same documents must leave the findings exactly as they are: only a run over
+    # changed documents (or changed rules) counts as another occurrence.
+    inputs_changed = (
+        stored is None
+        or stored.input_fingerprint != result.input_fingerprint
+        or stored.rules_version != result.rules_version
+    )
+
     existing = {row.fingerprint: row for row in session.scalars(select(Finding).where(Finding.claim_id == claim.id)).all()}
     raised = {finding.fingerprint: finding for finding in result.findings}
     created = reopened = auto_closed = 0
@@ -165,8 +174,9 @@ def refresh(session: Session, claim: Claim, *, actor: str | None = None, state: 
         row.action = payload["action"]
         row.evidence = payload["evidence"]
         row.context = payload["context"]
-        row.last_seen_at = now
-        row.occurrences = (row.occurrences or 0) + 1
+        if inputs_changed:
+            row.last_seen_at = now
+            row.occurrences = (row.occurrences or 0) + 1
         if row.status == FINDING_AUTO_CLOSED:
             row.status = FINDING_REOPENED
             row.status_changed_at = now
@@ -190,7 +200,7 @@ def refresh(session: Session, claim: Claim, *, actor: str | None = None, state: 
         document.duplicate_state = update["duplicate_state"]
         document.duplicate_of = update["duplicate_of"]
 
-    run = stored_run(session, claim.id)
+    run = stored
     if run is None:
         run = ValidationRun(claim_id=claim.id)
         session.add(run)
@@ -204,22 +214,25 @@ def refresh(session: Session, claim: Claim, *, actor: str | None = None, state: 
     run.findings_reopened = reopened
     run.duration_ms = int((time.monotonic() - started) * 1000)
 
-    record_event(
-        session,
-        "validation_completed",
-        f"Validation raised {len(result.findings)} finding(s)",
-        claim_id=claim.id,
-        actor=actor or "system",
-        details={
-            "rules_version": result.rules_version,
-            "findings_raised": len(result.findings),
-            "created": created,
-            "auto_closed": auto_closed,
-            "reopened": reopened,
-            "checks": result.summary["checks"],
-            "by_severity": result.summary["by_severity"],
-        },
-    )
+    # A run that changed nothing is not worth an audit entry.
+    if inputs_changed or created or auto_closed or reopened:
+        record_event(
+            session,
+            "validation_completed",
+            f"Validation raised {len(result.findings)} finding(s)",
+            claim_id=claim.id,
+            actor=actor or "system",
+            details={
+                "rules_version": result.rules_version,
+                "findings_raised": len(result.findings),
+                "created": created,
+                "auto_closed": auto_closed,
+                "reopened": reopened,
+                "inputs_changed": inputs_changed,
+                "checks": result.summary["checks"],
+                "by_severity": result.summary["by_severity"],
+            },
+        )
     session.commit()
     return RefreshOutcome(
         run=run, created=created, auto_closed=auto_closed, reopened=reopened, raised=len(result.findings), ran=True

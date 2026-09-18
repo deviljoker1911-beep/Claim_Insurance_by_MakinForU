@@ -168,11 +168,19 @@ for spec in FIELD_SPECS:
     SPECS_BY_GROUP.setdefault(spec.group, []).append(spec)
 
 
+# A wide gap that is followed by another "Label:" is the next column, not this label's value.
+# Only a colon counts here: a dash inside a value ("Rajesh Sharma - 47/M") is not a label.
+_NEXT_COLUMN_LABEL = r"[^\s:][^:]{0,40}:[ \t]"
+
+
 def _label_pattern(label: str) -> re.Pattern:
     # The value runs to the end of its column: a wide gap (kept as a double space by the
-    # text builder) or the end of the line.
+    # text builder) or the end of the line. OCR emits the label and its value as separate
+    # runs, so a value may legitimately sit after a wide gap — but a label with nothing
+    # after it must stay empty rather than borrow the next column's value.
     return re.compile(
-        rf"(?:^|\s{{2,}}|[·•|]\s*){label}\s*[:\-–]\s*(?P<value>\S.*?)(?=\s{{2,}}|$)",
+        rf"(?:^|\s{{2,}}|[·•|]\s*){label}\s*[:\-–](?:[ \t]|\s{{2,}}(?!{_NEXT_COLUMN_LABEL}))?"
+        rf"(?P<value>\S.*?)(?=\s{{2,}}|$)",
         re.IGNORECASE,
     )
 
@@ -380,8 +388,9 @@ TOTAL_PATTERNS: tuple[tuple[str, str], ...] = (
     (r"^(gst|tax|cgst|sgst|igst|vat|service tax)", "tax"),
 )
 
-_AMOUNT_CELL = re.compile(r"^\(?\d{1,3}(?:,\d{2,3})*(?:\.\d{1,2})?\)?$")
-_NUMBER_CELL = re.compile(r"^\(?\d{1,4}(?:,\d{2,3})*(?:\.\d{1,3})?\)?$")
+# Amounts may be printed negative (a discount or a credit line), with a sign or in brackets.
+_AMOUNT_CELL = re.compile(r"^-?\(?\d{1,3}(?:,\d{2,3})*(?:\.\d{1,2})?\)?$")
+_NUMBER_CELL = re.compile(r"^-?\(?\d{1,4}(?:,\d{2,3})*(?:\.\d{1,3})?\)?$")
 _SERIAL_CELL = re.compile(r"^\d{1,3}\.?$")
 
 

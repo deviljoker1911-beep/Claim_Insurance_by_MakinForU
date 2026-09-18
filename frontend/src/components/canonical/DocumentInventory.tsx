@@ -131,7 +131,7 @@ export function DocumentInventory({ items, claimId }: { items: DocumentInventory
         </tbody>
       </table>
       <p className="px-3 py-3 text-xs text-slate-500">
-        Duplicate and exclusion states are evaluated in a later phase.{' '}
+        A copy excluded as a duplicate stays in this list; its values are not used.{' '}
         <Link to={`/claims/${claimId}/intake`} className="font-medium text-brand-700 hover:underline">
           Manage documents
         </Link>

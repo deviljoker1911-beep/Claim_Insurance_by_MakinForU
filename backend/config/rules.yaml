@@ -186,8 +186,8 @@ rules:
     attribution: rule
     title: "Bill number {bill_number} is used by {count} bills"
     explanation: >-
-      {documents} all carry bill number {bill_number} with different totals ({totals}). A bill
-      number is expected to identify one bill.
+      {documents} carry bill number {bill_number}. {totals_phrase}: {totals}. A bill number
+      is expected to identify one bill.
     action: "Ask the hospital for correctly numbered bills before the claim is submitted."
     evidence: required
 
@@ -208,10 +208,9 @@ rules:
     attribution: source
     title: "{slot_label} signature is not present on {document_name}"
     explanation: >-
-      The {slot_lower} signature area was found on page {page} and carries no signature ink.
-      Stamps and printed rules are not counted as signatures.
+      {detail} Stamps and printed rules are not counted as signatures.
     action: "Obtain the signature, or supply a signed copy of the document."
-    evidence: required
+    evidence: optional
 
   - rule_id: R015
     code: IMPLANT_USAGE_NOT_CORROBORATED

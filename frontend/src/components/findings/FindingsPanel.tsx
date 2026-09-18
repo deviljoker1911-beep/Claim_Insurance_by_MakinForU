@@ -288,7 +288,7 @@ function FindingRow({
           {finding.evidence.length === 0 && (
             <span className="inline-flex items-center gap-1.5 text-xs text-slate-400">
               <EyeOff className="size-3.5" />
-              No page evidence: this finding is about a document that is not in the claim
+              No page evidence for this finding
             </span>
           )}
           <span className="grow" />

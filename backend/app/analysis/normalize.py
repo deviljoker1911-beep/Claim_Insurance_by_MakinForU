@@ -77,23 +77,29 @@ def format_date(value: date | None) -> str | None:
 
 # --- amounts ----------------------------------------------------------------------------
 
-_AMOUNT = re.compile(r"(?<![\d.])(\d{1,3}(?:,\d{2,3})*(?:\.\d{1,2})?|\d+(?:\.\d{1,2})?)(?![\d])")
+_AMOUNT = re.compile(r"(?<![\d.])(-?)\s?(\d{1,3}(?:,\d{2,3})*(?:\.\d{1,2})?|\d+(?:\.\d{1,2})?)(?![\d])")
 _CURRENCY_NOISE = re.compile(r"(?i)\b(rs|inr|rupees|only)\b\.?|[₹]")
 
 
 def parse_amount(value: str | None) -> Decimal | None:
-    """Parse an amount written with Indian digit grouping."""
+    """Parse an amount written with Indian digit grouping.
+
+    A bill may print a negative amount with a minus sign or in brackets; both are read as
+    negative, so a discount line is never mistaken for a charge.
+    """
     text = clean_text(value)
     if not text:
         return None
     text = _CURRENCY_NOISE.sub(" ", text)
+    bracketed = bool(re.fullmatch(r"\(\s*[\d.,]+\s*\)", text.strip()))
     match = _AMOUNT.search(text)
     if not match:
         return None
     try:
-        return Decimal(match.group(1).replace(",", ""))
+        amount = Decimal(match.group(2).replace(",", ""))
     except InvalidOperation:
         return None
+    return -amount if (match.group(1) == "-" or bracketed) else amount
 
 
 def format_amount(value: Decimal | None) -> str | None:

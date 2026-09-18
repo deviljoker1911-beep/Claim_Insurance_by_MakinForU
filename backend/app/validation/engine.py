@@ -734,9 +734,13 @@ def check_bill_numbers(ctx: Context) -> CheckOutcome:
                 _source_evidence(source, detail=f"{bill['bill_type_label']} bill number")
                 for source in bill["fields"]["number"]["sources"]
             )
+        amounts = [_decimal(bill["fields"]["total"]["value"]) for bill in shared]
         totals = ", ".join(
-            f"{bill['bill_type_label']} {_money(_decimal(bill['fields']['total']['value']))}" for bill in shared
+            f"{bill['bill_type_label']} {_money(amount)}" for bill, amount in zip(shared, amounts, strict=True)
         )
+        # Say what the totals are, not what they are assumed to be: equal totals are the
+        # ordinary sign of one bill sent twice, and differing ones of two different bills.
+        totals_phrase = "The totals differ" if len(set(amounts)) > 1 else "The totals are the same"
         outcome.findings.append(
             build(
                 "DUPLICATE_BILL_NUMBER",
@@ -746,6 +750,7 @@ def check_bill_numbers(ctx: Context) -> CheckOutcome:
                     "count": len(shared),
                     "documents": _names([{"document_name": bill["document_name"]} for bill in shared]),
                     "totals": totals,
+                    "totals_phrase": totals_phrase,
                 },
                 evidence=evidence,
             )
@@ -780,8 +785,9 @@ def check_bill_arithmetic(ctx: Context) -> CheckOutcome:
         document = ctx.document(bill["document_id"])
         if document is None:
             continue
-        number = bill["fields"]["number"]["value"] or document.original_filename
-        subject_base = f"bill:{nz.squash(number).replace(' ', '')}"
+        # Identified by the document, not by the bill number: two bills in one claim can carry
+        # the same number, and each of them must keep its own finding.
+        subject_base = f"bill:{document.sha256[:16]}"
         label = bill["bill_type_label"] or "Bill"
 
         # 1. quantity × rate = line amount
@@ -857,7 +863,8 @@ def check_bill_arithmetic(ctx: Context) -> CheckOutcome:
         # 3. subtotal + tax - discount = total. When a bill does not state its tax, a total
         #    above the subtotal is left alone: the unstated tax could account for it.
         if subtotal is not None and total is not None:
-            expected_total = subtotal + (tax or Decimal("0.00")) - (discount or Decimal("0.00"))
+            # A discount is subtracted once whether the bill prints it as 500.00 or as -500.00.
+            expected_total = subtotal + (tax or Decimal("0.00")) - abs(discount or Decimal("0.00"))
             unexplained_tax = tax is None and total > subtotal
             if not unexplained_tax:
                 checked += 1
@@ -1122,27 +1129,44 @@ def check_signatures(ctx: Context) -> CheckOutcome:
             slots_checked += 1
             if slot.get("signed"):
                 continue
+            label = slot.get("label") or "Signature"
+            lower = label.lower()
+            page = slot.get("page_number")
+            box = slot.get("bbox")
+            # A page is only named when the detector actually located the area there.
+            if page is not None and box:
+                detail = f"The {lower} signature area was found on page {page} and carries no signature ink."
+            elif slot.get("found"):
+                detail = f"The {lower} signature area was found in this document and carries no signature ink."
+            else:
+                detail = f"No {lower} signature area was found anywhere in this document."
+            evidence = (
+                [
+                    _evidence(
+                        kind="signature",
+                        document=document,
+                        page=page,
+                        bounding_box=box,
+                        snippet=slot.get("caption"),
+                        method=slot.get("method") or "signature_area",
+                        detail=slot.get("detail"),
+                    )
+                ]
+                if page is not None and box
+                else []
+            )
             outcome.findings.append(
                 build(
                     "SIGNATURE_NOT_DETECTED",
                     f"signature:{document.sha256}:{slot.get('key') or slot.get('caption')}",
                     context={
-                        "slot_label": slot.get("label") or "Signature",
-                        "slot_lower": (slot.get("label") or "signature").lower(),
+                        "slot_label": label,
+                        "slot_lower": label.lower(),
                         "document_name": document.original_filename,
-                        "page": slot.get("page_number") or 1,
+                        "page": page,
+                        "detail": detail,
                     },
-                    evidence=[
-                        _evidence(
-                            kind="signature",
-                            document=document,
-                            page=slot.get("page_number") or 1,
-                            bounding_box=slot.get("bbox"),
-                            snippet=slot.get("caption"),
-                            method=slot.get("method") or "signature_area",
-                            detail=slot.get("detail"),
-                        )
-                    ],
+                    evidence=evidence,
                 )
             )
     outcome.subjects_checked = slots_checked
@@ -1368,13 +1392,22 @@ def run(session: Session, claim: Claim, state: dict | None = None) -> Validation
     """Run every check over one claim and collect the findings they raise."""
     ctx = build_context(session, claim, state)
     outcomes = [check(ctx) for check in CHECKS]
-    findings = [finding for outcome in outcomes for finding in outcome.findings]
 
+    # Byte-identical copies of a document raise the same finding about the same content; it is
+    # reported once. Checks run in a fixed order, so which one keeps it never varies.
     seen: set[str] = set()
-    for finding in findings:
-        if finding.fingerprint in seen:  # pragma: no cover — a check bug, caught by the tests
-            raise ValueError(f"Two findings share a fingerprint: {finding.rule.code} {finding.subject}")
-        seen.add(finding.fingerprint)
+    for outcome in outcomes:
+        kept = []
+        for finding in outcome.findings:
+            if finding.fingerprint in seen:
+                logger.debug(
+                    "%s already raised for %s; reporting it once", finding.rule.code, finding.subject
+                )
+                continue
+            seen.add(finding.fingerprint)
+            kept.append(finding)
+        outcome.findings = kept
+    findings = [finding for outcome in outcomes for finding in outcome.findings]
 
     document_updates = _duplicate_annotations(outcomes, ctx)
     checks = [outcome.payload() for outcome in outcomes]
@@ -1404,11 +1437,15 @@ def run(session: Session, claim: Claim, state: dict | None = None) -> Validation
 
 
 def _duplicate_annotations(outcomes: list[CheckOutcome], ctx: Context) -> dict[str, dict]:
-    """What the duplicate check learned about each document, for the inventory."""
+    """What the duplicate check learned about each document, for the inventory.
+
+    A document a person excluded keeps the state that decision gave it: validation describes
+    the documents it looks at, and it does not look at excluded ones.
+    """
     updates = {
         document.id: {"duplicate_state": "unique", "duplicate_of": None}
         for document in ctx.documents
-        if document.processing_status == "processed"
+        if document.processing_status == "processed" and not document.excluded
     }
     for outcome in outcomes:
         if outcome.check_id != "duplicate_documents":
