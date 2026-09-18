@@ -531,6 +531,8 @@ def test_the_state_payload_has_one_stable_shape(analysed):
         "findings",
         "questions",
         "resolutions",
+        "readiness",
+        "review",
         "audit_events",
         "snapshot",
     }

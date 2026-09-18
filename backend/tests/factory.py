@@ -212,6 +212,77 @@ def anaesthesia_record(v: Values = CLEAN) -> bytes:
     return render_pdf([page], letterhead=HOSPITAL, title="Anaesthesia_Record", doc_ref="Form CCH/ANA/02")
 
 
+def pre_operative_assessment(v: Values = CLEAN) -> bytes:
+    def page(pg: Page) -> None:
+        pg.title("PRE-OPERATIVE ASSESSMENT", "Fitness for surgery")
+        pg.fields(
+            [
+                *_patient_fields(v),
+                ("Date of Assessment", v.admission),
+                ("Planned Procedure", v.procedure),
+                ("Surgeon", v.surgeon),
+                ("ASA Grade", "ASA II"),
+                ("Fitness for Surgery", "Fit for surgery under general anaesthesia"),
+            ]
+        )
+        pg.section("Systemic examination")
+        pg.bullets(
+            [
+                "Cardiovascular: S1 S2 heard, no murmur",
+                "Respiratory: bilateral air entry equal",
+                "Airway: Mallampati grade II",
+            ]
+        )
+        pg.signatures([Slot("Treating consultant", v.surgeon, date=v.admission, signed=True)])
+
+    return render_pdf([page], letterhead=HOSPITAL, title="PreOp_Assessment", doc_ref="Form CCH/PRE/01")
+
+
+def consultation(v: Values = CLEAN) -> bytes:
+    def page(pg: Page) -> None:
+        pg.title("CONSULTATION NOTE", "Department of General Surgery")
+        pg.fields(
+            [
+                *_patient_fields(v),
+                ("Date of Consultation", v.admission),
+                ("Consultant", v.surgeon),
+                ("Provisional Diagnosis", v.diagnosis),
+                ("Planned Procedure", v.procedure),
+            ]
+        )
+        pg.section("History and examination")
+        pg.text(
+            "Right upper abdominal pain for three days with nausea. Tenderness in the right "
+            "hypochondrium. Ultrasound reviewed."
+        )
+        pg.section("Advice")
+        pg.bullets(["Admit for surgery", "Pre-operative assessment", "Nil by mouth from midnight"])
+        pg.signatures([Slot("Treating consultant", v.surgeon, date=v.admission, signed=True)])
+
+    return render_pdf([page], letterhead=HOSPITAL, title="Doctor_Consultation", doc_ref="Form CCH/OPD/07")
+
+
+def anaesthesia_assessment(v: Values = CLEAN) -> bytes:
+    def page(pg: Page) -> None:
+        pg.title("PRE-ANAESTHETIC ASSESSMENT (PAC)", "Department of Anaesthesiology")
+        pg.fields(
+            [
+                *_patient_fields(v),
+                ("Date of Assessment", v.admission),
+                ("Planned Procedure", v.procedure),
+                ("Anaesthetist", v.anaesthetist),
+                ("Planned Anaesthesia", "General anaesthesia"),
+                ("ASA Grade", "ASA II"),
+                ("Airway Assessment", "Mallampati grade II, adequate mouth opening"),
+            ]
+        )
+        pg.section("Investigations reviewed")
+        pg.bullets(["Haemogram within normal limits", "ECG: normal sinus rhythm", "Chest X-ray: clear"])
+        pg.signatures([Slot("Anaesthetist", v.anaesthetist, date=v.admission, signed=True)])
+
+    return render_pdf([page], letterhead=HOSPITAL, title="Anaesthesia_Assessment", doc_ref="Form CCH/PAC/01")
+
+
 def consent(v: Values = CLEAN, *, patient_signed: bool = True) -> bytes:
     def page(pg: Page) -> None:
         pg.title("INFORMED CONSENT FOR SURGERY AND ANAESTHESIA")
@@ -469,6 +540,17 @@ def two_page_report(v: Values = CLEAN, *, second_page_same: bool = True) -> byte
 
 
 # --- the sets a scenario uses ---------------------------------------------------------------
+
+
+def checklist_complete_claim(v: Values = CLEAN) -> dict[str, bytes]:
+    """Every requirement of the laparoscopic cholecystectomy checklist, with agreeing values."""
+    return {
+        **complete_claim(v),
+        "07_PreOp_Assessment.pdf": pre_operative_assessment(v),
+        "08_Doctor_Consultation.pdf": consultation(v),
+        "09_Anaesthesia_Assessment.pdf": anaesthesia_assessment(v),
+        "10_Lab_Report.pdf": lab_report(v),
+    }
 
 
 def complete_claim(v: Values = CLEAN) -> dict[str, bytes]:

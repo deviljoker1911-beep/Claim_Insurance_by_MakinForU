@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { api, ApiError, uploadFiles } from './api'
 import type {
+  ApprovalResult,
   AssistantAnswer,
   ChecklistResponse,
   ChecksResponse,
@@ -10,6 +11,7 @@ import type {
   ClaimInput,
   ClaimProcessing,
   ClaimState,
+  DashboardResponse,
   FindingAction,
   FindingActionResult,
   FindingsResponse,
@@ -22,6 +24,7 @@ import type {
   QuestionAnswer,
   QuestionAnswerResult,
   QuestionsResponse,
+  ReadinessResponse,
   ReanalysisResponse,
   UploadResult,
 } from './types'
@@ -112,6 +115,37 @@ export function useChecklist(claimId: string) {
   })
 }
 
+export function useReadiness(claimId: string) {
+  return useQuery({
+    queryKey: ['claims', claimId, 'readiness'],
+    queryFn: () => api<ReadinessResponse>(`/claims/${encodeURIComponent(claimId)}/readiness`),
+    enabled: Boolean(claimId),
+    retry: (count, error) => !(error instanceof ApiError && error.status === 404) && count < 2,
+  })
+}
+
+/** The workspace at a glance: every number counted from the claims themselves. */
+export function useDashboard() {
+  return useQuery({
+    queryKey: ['dashboard'],
+    queryFn: () => api<DashboardResponse>('/dashboard'),
+  })
+}
+
+/** Approval is a person's action; the button that calls this is the only way it happens. */
+export function useApproveClaim(claimId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (note?: string) =>
+      api<ApprovalResult>(`/claims/${encodeURIComponent(claimId)}/review/approve`, {
+        method: 'POST',
+        body: JSON.stringify({ note: note ?? null }),
+      }),
+    onSuccess: () =>
+      Promise.all([claimViews(queryClient, claimId), queryClient.invalidateQueries({ queryKey: ['dashboard'] })]),
+  })
+}
+
 export function useQuestions(claimId: string) {
   return useQuery({
     queryKey: ['claims', claimId, 'questions'],
@@ -133,7 +167,7 @@ export function useChanges(claimId: string) {
 /** Everything a claim derives from its documents moves together, so refresh it together. */
 export function claimViews(queryClient: ReturnType<typeof useQueryClient>, claimId: string) {
   return Promise.all(
-    ['questions', 'findings', 'checks', 'checklist', 'changes', 'state', 'processing'].map((view) =>
+    ['questions', 'findings', 'checks', 'checklist', 'changes', 'readiness', 'state', 'processing'].map((view) =>
       queryClient.invalidateQueries({ queryKey: ['claims', claimId, view] }),
     ),
   )

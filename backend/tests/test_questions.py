@@ -161,13 +161,13 @@ def test_not_available_is_recorded_with_its_reason(client, claim_missing_operati
 
 def test_not_applicable_is_recorded_with_its_reason(client, claim_missing_operative_note):
     claim_id = claim_missing_operative_note.claim_id
-    question = question_for(client, claim_id, "post_operative_notes")
-    reason = "Day-care admission; the ward keeps no separate post-operative notes."
+    question = question_for(client, claim_id, "surgeon_consultation")
+    reason = "Admitted through casualty, so there was no outpatient consultation."
     response = client.post(
         f"/api/questions/{question['id']}/answer", json={"answer": "not_applicable", "reason": reason}
     )
     assert response.status_code == 200, response.text
-    stored = question_for(client, claim_id, "post_operative_notes")
+    stored = question_for(client, claim_id, "surgeon_consultation")
     assert stored["status"] == "not_applicable"
     assert stored["answer_reason"] == reason
     assert events(client, claim_id, "question_marked_not_applicable")

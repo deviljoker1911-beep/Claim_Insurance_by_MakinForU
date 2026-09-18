@@ -18,7 +18,8 @@ export function formatDate(isoDate: string): string {
   return dateFormat.format(new Date(`${isoDate}T00:00:00Z`))
 }
 
-export function formatDateTime(isoTimestamp: string): string {
+export function formatDateTime(isoTimestamp: string | null | undefined): string {
+  if (!isoTimestamp) return '—'
   return dateTimeFormat.format(new Date(isoTimestamp))
 }
 

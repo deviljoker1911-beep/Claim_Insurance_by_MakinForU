@@ -539,7 +539,85 @@ def main() -> int:
         "the assistant does not say a claim is ready or approved",
     )
 
-    print(f"13. Database and storage ({dialect})")
+    print("13. Readiness, the workflow and human approval")
+    status, readiness = call(base, "GET", f"/api/claims/{second['id']}/readiness")
+    check(status == 200, f"readiness served: {readiness['score']}% {readiness['status']}")
+    check(
+        readiness["score"] == 100 - sum(d["amount"] for d in readiness["breakdown"]["deductions"]),
+        "the score is exactly its own deductions taken off 100",
+    )
+    check(
+        readiness["status"] == "needs_attention" and readiness["summary"]["required_missing"] == 0,
+        "the complete claim has every required document and findings to look at",
+    )
+    check(
+        all(d["source"]["key"] and d["source"]["label"] for d in readiness["breakdown"]["deductions"]),
+        f"every deduction names what it is for ({len(readiness['breakdown']['deductions'])} of them)",
+    )
+    steps = {step["key"]: step["status"] for step in readiness["workflow"]}
+    check(
+        steps["documents"] == "complete" and steps["human_review"] == "pending",
+        f"the workflow reports where the claim stands: {steps}",
+    )
+
+    status, refused = post_json(base, f"/api/claims/{second['id']}/review/approve", {})
+    check(status == 422, f"approval is refused while the claim needs attention: {refused.get('detail', '')[:60]}…")
+
+    status, staged_readiness = call(base, "GET", f"/api/claims/{first['id']}/readiness")
+    unavailable = [
+        d for d in staged_readiness["breakdown"]["deductions"] if "documented as unavailable" in d["reason"]
+    ]
+    check(
+        len(unavailable) == 1 and unavailable[0]["amount"] == 6,
+        "a document recorded as unavailable costs 6 rather than 12",
+    )
+
+    status, findings_now = call(base, "GET", f"/api/claims/{second['id']}/findings")
+    to_deal_with = [item for item in findings_now["items"] if item["is_active"] and item["severity"] != "info"]
+    for item in to_deal_with:
+        post_json(base, f"/api/findings/{item['id']}/action", {"action": "acknowledge", "note": "Checked."})
+    status, ready = call(base, "GET", f"/api/claims/{second['id']}/readiness")
+    check(
+        ready["score"] == 100 and ready["status"] == "ready_for_human_review",
+        f"dealing with {len(to_deal_with)} finding(s) takes the claim to {ready['score']}% {ready['status']}",
+    )
+    check(ready["review"]["can_approve"] and ready["review"]["state"] == "draft", "approval is now offered")
+
+    status, approved = post_json(base, f"/api/claims/{second['id']}/review/approve", {"note": "Checked against the file."})
+    check(
+        status == 200 and approved["review"]["approved_by"] == "Demo Operator",
+        f"approved by {approved['review'].get('approved_by')} at {approved['review'].get('approved_at')}",
+    )
+    check(
+        approved["readiness"]["score"] == ready["score"],
+        "approval records a decision and leaves the score where it was",
+    )
+    status, again = post_json(base, f"/api/claims/{second['id']}/review/approve", {})
+    check(status == 409, "a claim is not approved twice")
+
+    status, audit_now = call(base, "GET", f"/api/claims/{second['id']}/audit")
+    types = [event["event_type"] for event in audit_now]
+    check("human_review_started" in types, "audit event recorded: human_review_started")
+    approval_events = [event for event in audit_now if event["event_type"] == "human_approval"]
+    check(
+        len(approval_events) == 1 and approval_events[0]["actor"] == "Demo Operator",
+        "audit event recorded: human_approval, by the operator who clicked it",
+    )
+
+    status, dash = call(base, "GET", "/api/dashboard")
+    check(status == 200 and dash["totals"]["claims"] == 2, f"dashboard counts the claims: {dash['totals']}")
+    check(
+        dash["totals"]["approved"] == 1 and dash["totals"]["ready_for_human_review"] >= 1,
+        "the dashboard reflects the approval that just happened",
+    )
+    check(
+        dash["totals"]["average_readiness"]
+        == round(sum(row["readiness_score"] for row in dash["claims"]) / len(dash["claims"])),
+        f"average readiness is the average of the claims ({dash['totals']['average_readiness']}%)",
+    )
+    check(bool(dash["recent_activity"]), "recent activity comes from the audit trail")
+
+    print(f"14. Database and storage ({dialect})")
     engine = make_engine(settings.database_url)
     try:
         with Session(engine) as session:
@@ -564,7 +642,9 @@ def main() -> int:
                 "document_uploaded": 36,
                 "document_processed": 36,
                 "demo_pack_attached": 3,
-                "finding_action": 3,
+                # Three in the lifecycle section, and one for each finding acknowledged before
+                # the claim was approved.
+                "finding_action": 3 + len(to_deal_with),
                 "document_excluded": 1,
                 "question_answered": 2,
                 "document_requested": 1,
@@ -583,6 +663,8 @@ def main() -> int:
                 "question_resolved",
                 "reanalysis_started",
                 "reanalysis_completed",
+                "human_review_started",
+                "human_approval",
             ):
                 check(counts.get(name, 0) >= 1, f"audit event recorded {counts.get(name, 0)} time(s): {name}")
             unexpected = set(counts) - set(fixed) - {
@@ -594,6 +676,8 @@ def main() -> int:
                 "reanalysis_completed",
                 "question_marked_not_applicable",
                 "workspace_initialized",
+                "human_review_started",
+                "human_approval",
             }
             check(not unexpected, f"no unexpected audit event types: {sorted(unexpected) or 'none'}")
             check(validation_runs >= 2, f"validation ran for both claims ({validation_runs} runs recorded)")
@@ -614,10 +698,15 @@ def main() -> int:
                 select(func.count()).select_from(Document).where(Document.processing_status != "processed", Document.claim_id == second["id"])
             )
             check(unprocessed == 0, "every document of the analysed claim is marked processed")
+            # Read the claim as it stands now: the sections above have acted on it since the
+            # canonical claim was first compared.
+            status, current_state = call(base, "GET", f"/api/claims/{second['id']}/state")
+            session.expire_all()
             snapshot = session.scalar(select(ClaimState).where(ClaimState.claim_id == second["id"]))
             check(snapshot is not None, "canonical snapshot stored")
             check(
-                snapshot.content_sha256 == rebuilt["snapshot"]["content_sha256"] and snapshot.processed_count == 18,
+                snapshot.content_sha256 == current_state["snapshot"]["content_sha256"]
+                and snapshot.processed_count == 18,
                 "stored snapshot matches what the API served",
             )
             check(

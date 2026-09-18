@@ -154,9 +154,37 @@ def checklists_config() -> dict[str, Any]:
     return data
 
 
+@lru_cache
+def readiness_config() -> dict[str, Any]:
+    """The readiness model: what each outstanding item costs, and what each status means."""
+    data = _load("readiness.yaml", ("base_score", "floor", "deductions", "statuses", "not_charged"))
+    if not isinstance(data["base_score"], int) or not 0 < data["base_score"] <= 100:
+        raise ConfigError("readiness.yaml: base_score must be between 1 and 100")
+    if not isinstance(data["floor"], int) or data["floor"] < 0:
+        raise ConfigError("readiness.yaml: floor must be zero or more")
+    required_deductions = (
+        "required_document_missing",
+        "required_document_documented_unavailable",
+        "checklist_review_without_finding",
+        "finding_critical",
+        "finding_review",
+        "finding_warning",
+        "finding_info",
+    )
+    for name in required_deductions:
+        value = data["deductions"].get(name)
+        if not isinstance(value, int) or value < 0:
+            raise ConfigError(f"readiness.yaml: deduction {name} must be a whole number of points")
+    for status in ("incomplete", "needs_attention", "ready_for_human_review"):
+        if not data["statuses"].get(status):
+            raise ConfigError(f"readiness.yaml: status {status} needs a description")
+    return data
+
+
 def reload_configs() -> None:
     document_types_config.cache_clear()
     quality_config.cache_clear()
     canonical_config.cache_clear()
     rules_config.cache_clear()
     checklists_config.cache_clear()
+    readiness_config.cache_clear()

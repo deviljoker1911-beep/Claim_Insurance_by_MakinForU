@@ -789,3 +789,141 @@ export interface AssistantAnswer {
   notice: string
   removed_citations: string[]
 }
+
+/** --- Readiness, review and the dashboard (phase 8) --- */
+
+export type ReadinessStatus = 'incomplete' | 'needs_attention' | 'ready_for_human_review'
+
+export interface ReadinessDeduction {
+  reason: string
+  amount: number
+  source: {
+    kind: 'requirement' | 'finding'
+    key: string
+    label: string
+    detail?: string | null
+    code?: string | null
+    severity?: Severity | null
+    question_id?: string | null
+  }
+}
+
+export interface ReadinessBreakdown {
+  base_score: number
+  deductions: ReadinessDeduction[]
+  deducted: number
+  final_score: number
+  status: ReadinessStatus
+}
+
+export interface ReadinessBlockingItem {
+  kind: 'requirement' | 'finding'
+  key: string
+  label: string
+  detail: string | null
+  action: string | null
+}
+
+export interface ReadinessSection {
+  score: number
+  status: ReadinessStatus
+  status_label: string
+  status_detail: string
+  breakdown: ReadinessBreakdown
+  blocking_items: ReadinessBlockingItem[]
+  summary: {
+    required_missing: number
+    documented_unavailable: number
+    not_applicable: number
+    checklist_reviews: number
+    open_findings: number
+    counted_findings: number
+    findings_by_severity: Record<Severity, number>
+    open_questions: number
+    checklist_available: boolean
+  }
+}
+
+export interface ReviewSection {
+  state: 'draft' | 'approved'
+  approved: boolean
+  approved_by: string | null
+  approved_at: string | null
+  approval_note: string | null
+  review_started_at: string | null
+  can_approve: boolean
+}
+
+export type WorkflowStepStatus = 'pending' | 'current' | 'complete'
+
+export interface WorkflowStep {
+  key: string
+  label: string
+  status: WorkflowStepStatus
+  detail: string
+}
+
+export interface ReadinessResponse extends ReadinessSection {
+  claim_id: string
+  claim_number: string
+  review: ReviewSection
+  workflow: WorkflowStep[]
+}
+
+export interface ApprovalResult {
+  claim_id: string
+  claim_number: string
+  review: ReviewSection
+  readiness: ReadinessSection
+}
+
+export interface DashboardClaim {
+  claim_id: string
+  claim_number: string
+  patient_name: string
+  uhid: string
+  hospital: string
+  insurer: string
+  procedure: string | null
+  procedure_key: string | null
+  document_count: number
+  processed_count: number
+  open_findings: number
+  open_questions: number
+  readiness_score: number
+  readiness_status: ReadinessStatus
+  readiness_status_label: string
+  review_state: 'draft' | 'approved'
+  approved_by: string | null
+  approved_at: string | null
+  status: string
+  is_demo: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface DashboardResponse {
+  totals: {
+    claims: number
+    incomplete: number
+    needs_attention: number
+    ready_for_human_review: number
+    approved: number
+    average_readiness: number
+    open_findings: number
+    open_questions: number
+    documents: number
+  }
+  claims: DashboardClaim[]
+  recent_activity: {
+    id: number
+    event_type: string
+    actor: string
+    message: string
+    claim_id: string | null
+    document_id: string | null
+    created_at: string | null
+  }[]
+  limit: number
+  truncated: boolean
+}

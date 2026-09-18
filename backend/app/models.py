@@ -52,6 +52,16 @@ class Claim(Base):
     discharge_date: Mapped[date] = mapped_column(Date)
     status: Mapped[str] = mapped_column(String(32), default="draft")
     is_demo: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    # --- human review (phase 8) ---
+    # A claim is a draft until a person approves it. Nothing but a person's action sets this.
+    review_state: Mapped[str] = mapped_column(String(16), default="draft")
+    review_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    approved_by: Mapped[str | None] = mapped_column(String(120))
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    approval_note: Mapped[str | None] = mapped_column(String(500))
+    # What the documentation looked like when it was approved, kept as it was.
+    approved_readiness: Mapped[dict] = mapped_column(JSONType, default=dict)
     created_by: Mapped[str] = mapped_column(String(120))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
@@ -398,6 +408,10 @@ FINDING_REOPENED = "reopened"
 FINDING_STATUSES = (FINDING_OPEN, FINDING_RESOLVED, FINDING_ACKNOWLEDGED, FINDING_AUTO_CLOSED, FINDING_REOPENED)
 # Statuses that still need someone to act.
 FINDING_ACTIVE_STATUSES = (FINDING_OPEN, FINDING_REOPENED)
+
+REVIEW_DRAFT = "draft"
+REVIEW_APPROVED = "approved"
+REVIEW_STATES = (REVIEW_DRAFT, REVIEW_APPROVED)
 
 QUESTION_OPEN = "open"
 QUESTION_ANSWERED = "answered"

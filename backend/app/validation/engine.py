@@ -1369,7 +1369,15 @@ def build_context(session: Session, claim: Claim, state: dict | None = None) -> 
 
 # What validation itself writes back into the canonical claim. None of it may decide whether
 # validation needs to run again, or every read would trigger another run.
-DERIVED_SECTIONS = ("findings", "audit_events", "checklist", "questions", "resolutions")
+DERIVED_SECTIONS = (
+    "findings",
+    "audit_events",
+    "checklist",
+    "questions",
+    "resolutions",
+    "readiness",
+    "review",
+)
 DERIVED_DOCUMENT_FIELDS = ("duplicate_state", "duplicate_of")
 
 

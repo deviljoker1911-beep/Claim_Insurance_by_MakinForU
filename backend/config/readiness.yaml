@@ -1,0 +1,47 @@
+# Documentation readiness: how complete the paperwork of a claim is.
+#
+# This is not a prediction of whether an insurer will pay. It counts what the claim is still
+# waiting for, deterministically, so that the same claim always scores the same and every point
+# can be traced to the item that cost it.
+#
+# A score starts at 100 and each outstanding item deducts from it, with a floor of 0. An issue
+# is charged once: a document that is missing is charged as a missing document, and the findings
+# the rules raise *because* it is missing are not charged again on top of it.
+version: 1
+
+base_score: 100
+floor: 0
+
+deductions:
+  # A required document of the procedure's checklist that the claim does not have, and the
+  # operator has not answered the request for.
+  required_document_missing: 12
+  # The operator answered that the document does not exist or cannot be obtained. The claim is
+  # still short of it, but the gap is explained and on the record.
+  required_document_documented_unavailable: 6
+  # A requirement a person should look at where no finding explains why. Where a finding does
+  # explain it, that finding is charged instead and this is not.
+  checklist_review_without_finding: 4
+  # Open findings, by the severity the rule gives them. An informational note costs nothing.
+  finding_critical: 8
+  finding_review: 5
+  finding_warning: 2
+  finding_info: 0
+
+statuses:
+  # Evaluated in this order; the first that holds is the status.
+  incomplete: A required document is missing and the request for it has not been answered.
+  needs_attention: A finding is open for review, or a requirement needs a person to look at it.
+  ready_for_human_review: Nothing is outstanding in the documentation. A person decides what happens next.
+
+# Findings that are not charged, because the thing they are about is already charged.
+not_charged:
+  # The missing document itself is charged as a missing document.
+  codes: [MISSING_REQUIRED_DOCUMENT]
+  # A rule that needs a document type the claim does not have is reporting the consequence of
+  # that missing document. The document types each rule depends on are declared in rules.yaml.
+  depends_on_missing_document: true
+
+# A question never adds a deduction of its own: it is how a requirement is answered, and the
+# requirement is what is charged.
+questions_add_deductions: false

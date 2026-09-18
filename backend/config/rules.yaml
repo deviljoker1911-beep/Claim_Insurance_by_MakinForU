@@ -214,6 +214,10 @@ rules:
 
   - rule_id: R015
     code: IMPLANT_USAGE_NOT_CORROBORATED
+    # This rule can only be satisfied by one of these document types. Where the claim has
+    # none of them, the finding is the consequence of that missing document, and readiness
+    # charges the missing document rather than charging both.
+    depends_on_document_types: [operative_note, anaesthesia_record]
     category: clinical
     severity: review
     attribution: rule

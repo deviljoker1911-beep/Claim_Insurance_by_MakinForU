@@ -35,8 +35,8 @@ Document upload → OCR → Classification → Extraction → Claim structuring
 | 5 | Cross-document validation and findings | ✅ Done |
 | 6 | Procedure detection and procedure checklist engine | ✅ Done |
 | 7 | Interactive questions, grounded assistant and incremental re-analysis | ✅ Done |
-| 8 | Readiness engine and dashboard | ⏳ Next |
-| 9 | Final report (PDF / Excel) and audit trail | ⏳ |
+| 8 | Readiness, dashboard and human approval | ✅ Done |
+| 9 | Final report (PDF / Excel) and audit trail | ⏳ Next |
 | 10 | UI polish and demo experience | ⏳ |
 
 ## Tech stack
@@ -123,7 +123,8 @@ Text that a document hides behind opaque paint is detected, reported separately 
 
 The extracted values are assembled into one structured claim: patient, admission, diagnosis,
 procedures, doctors, investigations, documents, bills, findings, the procedure checklist, the
-questions it raised and the answers recorded against them.
+questions it raised, the answers recorded against them, the readiness of the documentation and
+the human review.
 
 Where several documents carry the same value they are compared in a normalised form (names
 without honorifics, dates as calendar dates, identifiers without punctuation, amounts
@@ -242,6 +243,47 @@ system may not conclude — approval, readiness for submission, medical necessit
 or any accusation — is removed before the answer is served. What survives is shown with its
 sources as chips a reviewer can open.
 
+### Readiness and human review
+
+Documentation readiness is a count, not a prediction: it says how much of the paperwork is
+still outstanding, and every point can be read back as the item that cost it. A claim starts at
+100 and each outstanding item deducts from it, to a floor of 0
+([`backend/config/readiness.yaml`](backend/config/readiness.yaml)):
+
+| Outstanding item | Deduction |
+|------------------|-----------|
+| Required document missing, request unanswered | −12 |
+| Required document documented as unavailable | −6 |
+| Requirement needing a look with no finding to explain it | −4 |
+| Open critical finding | −8 |
+| Open review finding | −5 |
+| Open warning finding | −2 |
+| Open informational note | 0 |
+
+**An issue is charged once.** A missing document is charged as a missing document; the
+missing-document finding the rules raise about it is not charged again, and neither is a rule
+that could only be satisfied by the document that is absent — the implant invoice cannot be
+corroborated while the operative note is missing, so that consequence is not a second charge.
+A question adds nothing of its own: it is how a requirement is answered, and the requirement is
+what is charged. A requirement recorded as not applicable costs nothing at all.
+
+| Status | When |
+|--------|------|
+| Incomplete | A required document is missing and the request for it has not been answered — or nothing has been read yet |
+| Needs attention | A finding is open for review, or a requirement needs a person to look at it |
+| Ready for human review | Nothing is outstanding in the documentation |
+
+Reaching 100% is not approval. Approval is a person's action: `Approve claim` is offered only
+once the documentation is ready for review, refused while anything is outstanding, refused a
+second time, and recorded with who approved it and when. Nothing else in the system — not the
+rules, the checklist, the questions or the assistant — can approve a claim. The score is
+unchanged by approval: it describes the paperwork, and the decision is recorded beside it.
+
+The demo claim walks the whole path: **44% incomplete** with the operative note and the
+anaesthesia record missing, **56%** once the operative note arrives, **68% needs attention**
+once the anaesthesia record does, and **100% ready for human review** once the seven findings
+have been dealt with.
+
 ## API
 
 | Endpoint | Description |
@@ -270,6 +312,9 @@ sources as chips a reviewer can open.
 | `GET /api/claims/{id}/changes` | What each pass of analysis changed, as a comparison of two structured states |
 | `POST /api/claims/{id}/assistant` | Ask about this claim. The answer carries its sources and the provider that wrote it. |
 | `GET /api/assistant/provider` | Which provider answers, and whether a key is configured for it |
+| `GET /api/claims/{id}/readiness` | The readiness score, what each deduction is for, what is blocking it, and the seven workflow steps |
+| `POST /api/claims/{id}/review/approve` | A person approves the claim. Refused unless the documentation is ready for review, and refused a second time. |
+| `GET /api/dashboard` | The workspace: totals, average readiness, every claim with its score, and recent activity |
 | `POST /api/claims/{id}/validate` | Run the rules again over the documents as they stand |
 | `POST /api/findings/{id}/action` | `review`, `resolve`, `acknowledge`, `reopen` or `exclude_duplicate` |
 | `POST /api/demo/reset` | Body `{"confirm": true}` (JSON only, so other web pages cannot trigger it). Delete all claims and originals, recreate and verify the demo data, restart numbering. Application settings are kept; in-flight requests finish first. |
@@ -295,25 +340,26 @@ In development, the Vite dev server forwards `/api` to `http://127.0.0.1:8010`. 
 │   │   ├── storage.py       write-once original storage (SHA-256, read-only)
 │   │   ├── audit.py         audit trail helper
 │   │   ├── worker.py        single-threaded processing queue (FIFO, restart-safe)
-│   │   ├── api/             routes: health, claims, documents, analysis, validation, checklist, questions, assistant, demo, audit
-│   │   ├── services/        claims, numbering, intake, demo packs, analysis, canonical, validation, questions, re-analysis, assistant, workspace reset
+│   │   ├── api/             routes: health, claims, documents, analysis, validation, checklist, questions, assistant, readiness, dashboard, demo, audit
+│   │   ├── services/        claims, numbering, intake, demo packs, analysis, canonical, validation, questions, re-analysis, assistant, review, dashboard, workspace reset
 │   │   ├── processing/      text layer and covered text, rendering, OCR, quality, signatures, pipeline
 │   │   ├── analysis/        classification, value normalisation, field and bill extraction
 │   │   ├── canonical/       canonical claim: field map, weighted value selection, builder
 │   │   ├── validation/      rule registry, duplicate detection, the checks and the engine
 │   │   ├── checklist/       procedure checklist engine
+│   │   ├── readiness/       readiness scoring and the workflow steps
 │   │   ├── questions/       what the claim asks the operator for
 │   │   ├── reanalysis/      the change model: two states compared
 │   │   ├── assistant/       claim context, providers, intents and the answer guard
 │   │   └── demo_gen/        deterministic synthetic document generator
-│   ├── config/              document_types.yaml, quality.yaml, canonical.yaml, rules.yaml, checklists.yaml
+│   ├── config/              document_types.yaml, quality.yaml, canonical.yaml, rules.yaml, checklists.yaml, readiness.yaml
 │   ├── scripts/             ensure_db.py, smoke_test.py
 │   └── tests/               pytest suite (isolated SQLite)
 ├── demo_data/               generated synthetic claim documents, OCR fixtures and manifest
 ├── frontend/                React web app
 │   └── src/
 │       ├── app/             router, layout, error boundary
-│       ├── components/      layout, UI primitives, claims, upload, analysis, canonical, findings, checklist, questions, changes, assistant
+│       ├── components/      layout, UI primitives, claims, upload, analysis, canonical, findings, checklist, questions, changes, assistant, readiness
 │       ├── lib/             API client, hooks, types, formatting
 │       └── pages/           Dashboard, My Claims, New Claim, claim overview, claim intake, Reports, Settings
 ├── docker-compose.yml       optional PostgreSQL

@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 
 from app.analysis.classify import type_label
 from app.checklist import engine as checklist_engine
+from app.readiness import engine as readiness_engine
 from app.canonical import keys as canonical_keys
 from app.canonical.selection import (
     Candidate,
@@ -417,6 +418,8 @@ def _questions_section(questions: list[Question]) -> dict:
                 "status": question.status,
                 "severity": question.severity,
                 "expected_document_type": question.expected_document_type,
+                "answer": question.answer,
+                "answer_reason": question.answer_reason,
                 "resolved_document_id": question.resolved_document_id,
                 "created_at": _iso(question.created_at),
                 "updated_at": _iso(question.updated_at),
@@ -555,6 +558,19 @@ def build_claim_state(session: Session, claim: Claim) -> dict:
     }
     # The checklist reads the sections above, so it is built once they are all there.
     state["checklist"] = checklist_engine.build_checklist(state, _finding_refs(findings))
+    # Readiness reads the checklist, the findings and the questions: it counts what is still
+    # outstanding and never decides anything about the claim.
+    state["readiness"] = readiness_engine.evaluate(state, state["questions"]["items"])
+    state["review"] = {
+        "state": claim.review_state,
+        "approved": claim.review_state == "approved",
+        "approved_by": claim.approved_by,
+        "approved_at": _iso(claim.approved_at),
+        "approval_note": claim.approval_note,
+        "review_started_at": _iso(claim.review_started_at),
+        "can_approve": claim.review_state != "approved"
+        and readiness_engine.can_be_approved(state["readiness"]),
+    }
     for section, note in canonical_keys.PENDING_SECTIONS.items():
         state[section] = {"available": False, "count": 0, "items": [], "note": note}
     return state

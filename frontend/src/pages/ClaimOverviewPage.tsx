@@ -17,6 +17,8 @@ import { BillsPanel } from '../components/canonical/BillsPanel'
 import { ChangeSummary } from '../components/changes/ChangeSummary'
 import { ChecklistPanel, ProcedureSummary } from '../components/checklist/ChecklistPanel'
 import { QuestionsPanel, QuestionsSummaryBadge } from '../components/questions/QuestionsPanel'
+import { ReadinessCard } from '../components/readiness/ReadinessCard'
+import { WorkflowStepper } from '../components/readiness/WorkflowStepper'
 import { ChecksPanel } from '../components/findings/ChecksPanel'
 import { FindingsPanel } from '../components/findings/FindingsPanel'
 import { CanonicalFieldList, CanonicalFieldRow, SourceChip } from '../components/canonical/CanonicalField'
@@ -42,6 +44,7 @@ import {
   useFindingAction,
   useFindings,
   useQuestions,
+  useReadiness,
 } from '../lib/hooks'
 import type { CanonicalValue, ClaimState, Finding, FindingAction, ProcedureItem } from '../lib/types'
 
@@ -53,6 +56,7 @@ export function ClaimOverviewPage() {
   const checklist = useChecklist(claimId)
   const questions = useQuestions(claimId)
   const changes = useChanges(claimId)
+  const readiness = useReadiness(claimId)
   const processing = useClaimProcessing(claimId)
   const queryClient = useQueryClient()
   const wasRunning = useRef(false)
@@ -132,6 +136,26 @@ export function ClaimOverviewPage() {
           from the <span className="font-medium">Documents</span> screen.
         </Notice>
       )}
+
+      <Card className="mb-6" data-testid="readiness-panel">
+        {readiness.isPending ? (
+          <div className="space-y-3 p-5">
+            <Skeleton className="h-10 w-48 rounded-lg" />
+            <Skeleton className="h-2.5 rounded-full" />
+          </div>
+        ) : readiness.data ? (
+          <>
+            <ReadinessCard readiness={readiness.data} claimId={claimId} />
+            <div className="border-t border-slate-100">
+              <WorkflowStepper steps={readiness.data.workflow} />
+            </div>
+          </>
+        ) : (
+          <p className="px-5 py-6 text-sm text-slate-500">
+            {readiness.error?.message ?? 'Readiness is unavailable.'}
+          </p>
+        )}
+      </Card>
 
       <div className="mb-6 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <Stat

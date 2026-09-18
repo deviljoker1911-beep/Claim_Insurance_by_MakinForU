@@ -968,6 +968,134 @@ class AssistantAnswerOut(BaseModel):
     removed_citations: list[str] = []
 
 
+# --- Readiness, review and the dashboard (phase 8) -----------------------------------------
+
+
+class ReadinessSourceOut(BaseModel):
+    kind: Literal["requirement", "finding"]
+    key: str
+    label: str
+    detail: str | None = None
+    code: str | None = None
+    severity: str | None = None
+    question_id: str | None = None
+
+
+class ReadinessDeductionOut(BaseModel):
+    reason: str
+    amount: int
+    source: ReadinessSourceOut
+
+
+class ReadinessBreakdownOut(BaseModel):
+    base_score: int
+    deductions: list[ReadinessDeductionOut] = []
+    deducted: int
+    final_score: int
+    status: str
+
+
+class ReadinessBlockingItemOut(BaseModel):
+    kind: Literal["requirement", "finding"]
+    key: str
+    label: str
+    detail: str | None = None
+    action: str | None = None
+
+
+class ReadinessSectionOut(BaseModel):
+    """What the documentation is still waiting for, and what that costs."""
+
+    score: int
+    status: Literal["incomplete", "needs_attention", "ready_for_human_review"]
+    status_label: str
+    status_detail: str
+    breakdown: ReadinessBreakdownOut
+    blocking_items: list[ReadinessBlockingItemOut] = []
+    summary: dict[str, Any] = {}
+
+
+class ReviewSectionOut(BaseModel):
+    state: Literal["draft", "approved"]
+    approved: bool = False
+    approved_by: str | None = None
+    approved_at: UTCDateTime | None = None
+    approval_note: str | None = None
+    review_started_at: UTCDateTime | None = None
+    can_approve: bool = False
+
+
+class ReadinessResponse(ReadinessSectionOut):
+    claim_id: str
+    claim_number: str
+    review: ReviewSectionOut
+    workflow: list[dict[str, Any]] = []
+
+
+class ApprovalRequest(BaseModel):
+    note: str | None = Field(default=None, max_length=500)
+
+    @field_validator("note")
+    @classmethod
+    def _clean_note(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        value = value.strip()
+        if any(ord(char) < 32 or ord(char) == 127 for char in value):
+            raise ValueError("must not contain control characters")
+        return value or None
+
+
+class ApprovalResult(BaseModel):
+    claim_id: str
+    claim_number: str
+    review: ReviewSectionOut
+    readiness: ReadinessSectionOut
+
+
+class DashboardClaimOut(BaseModel):
+    claim_id: str
+    claim_number: str
+    patient_name: str
+    uhid: str
+    hospital: str
+    insurer: str
+    procedure: str | None = None
+    procedure_key: str | None = None
+    document_count: int
+    processed_count: int
+    open_findings: int
+    open_questions: int
+    readiness_score: int
+    readiness_status: str
+    readiness_status_label: str
+    review_state: str
+    approved_by: str | None = None
+    approved_at: UTCDateTime | None = None
+    status: str
+    is_demo: bool
+    created_at: UTCDateTime
+    updated_at: UTCDateTime
+
+
+class DashboardActivityOut(BaseModel):
+    id: int
+    event_type: str
+    actor: str
+    message: str
+    claim_id: str | None = None
+    document_id: str | None = None
+    created_at: UTCDateTime | None = None
+
+
+class DashboardResponse(BaseModel):
+    totals: dict[str, int]
+    claims: list[DashboardClaimOut] = []
+    recent_activity: list[DashboardActivityOut] = []
+    limit: int
+    truncated: bool = False
+
+
 class ClaimStateOut(BaseModel):
     """The canonical claim: one structured claim assembled from the documents."""
 
@@ -982,6 +1110,8 @@ class ClaimStateOut(BaseModel):
     documents: DocumentsSectionOut
     bills: BillsSectionOut
     checklist: ChecklistSectionOut
+    readiness: ReadinessSectionOut
+    review: ReviewSectionOut
     findings: CanonicalFindingsSectionOut
     questions: CanonicalQuestionsSectionOut
     resolutions: CanonicalResolutionsSectionOut

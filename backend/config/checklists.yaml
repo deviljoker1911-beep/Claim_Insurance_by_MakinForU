@@ -102,6 +102,9 @@ requirements:
     description: The progress notes written after the operation.
     doc_types: [post_operative_note]
     severity: review
+    # Supporting: the discharge summary carries the post-operative course, so a claim without
+    # separate progress notes is reported as short of them rather than held incomplete.
+    required: false
     question: Do you have the post-operative notes for this admission?
     why: The progress notes written after the operation are not among the documents.
     resolution: Upload the post-operative progress notes.
