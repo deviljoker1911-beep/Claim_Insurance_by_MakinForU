@@ -2,11 +2,15 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { api, ApiError } from './api'
 import type {
+  ChecksResponse,
   Claim,
   ClaimDetail,
   ClaimInput,
   ClaimProcessing,
   ClaimState,
+  FindingAction,
+  FindingActionResult,
+  FindingsResponse,
   DemoAttachResult,
   DemoClaimProfile,
   DemoResetResult,
@@ -80,6 +84,43 @@ export function useClaimState(claimId: string) {
   })
 }
 
+/** Findings of a claim. Validation runs again first if the documents changed. */
+export function useFindings(claimId: string) {
+  return useQuery({
+    queryKey: ['claims', claimId, 'findings'],
+    queryFn: () => api<FindingsResponse>(`/claims/${encodeURIComponent(claimId)}/findings`),
+    enabled: Boolean(claimId),
+    retry: (count, error) => !(error instanceof ApiError && error.status === 404) && count < 2,
+  })
+}
+
+/** Every check the validation engine ran, and whether it passed, failed or is waiting. */
+export function useChecks(claimId: string) {
+  return useQuery({
+    queryKey: ['claims', claimId, 'checks'],
+    queryFn: () => api<ChecksResponse>(`/claims/${encodeURIComponent(claimId)}/checks`),
+    enabled: Boolean(claimId),
+    retry: (count, error) => !(error instanceof ApiError && error.status === 404) && count < 2,
+  })
+}
+
+export function useFindingAction(claimId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ findingId, action, note }: { findingId: string; action: FindingAction; note?: string }) =>
+      api<FindingActionResult>(`/findings/${encodeURIComponent(findingId)}/action`, {
+        method: 'POST',
+        body: JSON.stringify({ action, note: note ?? null }),
+      }),
+    onSuccess: () =>
+      Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['claims', claimId, 'findings'] }),
+        queryClient.invalidateQueries({ queryKey: ['claims', claimId, 'checks'] }),
+        queryClient.invalidateQueries({ queryKey: ['claims', claimId, 'state'] }),
+      ]),
+  })
+}
+
 export function useStartAnalysis(claimId: string) {
   const queryClient = useQueryClient()
   return useMutation({
@@ -88,6 +129,8 @@ export function useStartAnalysis(claimId: string) {
       queryClient.setQueryData(['claims', claimId, 'processing'], state)
       void queryClient.invalidateQueries({ queryKey: ['claims', claimId, 'processing'] })
       void queryClient.invalidateQueries({ queryKey: ['claims', claimId, 'state'] })
+      void queryClient.invalidateQueries({ queryKey: ['claims', claimId, 'findings'] })
+      void queryClient.invalidateQueries({ queryKey: ['claims', claimId, 'checks'] })
     },
   })
 }

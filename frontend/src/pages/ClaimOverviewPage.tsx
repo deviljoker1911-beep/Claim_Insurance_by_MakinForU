@@ -13,6 +13,8 @@ import { useState } from 'react'
 import { useParams } from 'react-router'
 
 import { BillsPanel } from '../components/canonical/BillsPanel'
+import { ChecksPanel } from '../components/findings/ChecksPanel'
+import { FindingsPanel } from '../components/findings/FindingsPanel'
 import { CanonicalFieldList, CanonicalFieldRow, SourceChip } from '../components/canonical/CanonicalField'
 import { DocumentInventory } from '../components/canonical/DocumentInventory'
 import { EvidenceViewer, type EvidenceRequest } from '../components/canonical/EvidenceViewer'
@@ -24,15 +26,32 @@ import { EmptyState } from '../components/ui/EmptyState'
 import { Notice } from '../components/ui/Notice'
 import { PageHeader } from '../components/ui/PageHeader'
 import { Skeleton } from '../components/ui/Skeleton'
-import { ApiError } from '../lib/api'
+import { ApiError, errorMessage } from '../lib/api'
 import { formatDate, formatDateTime, plural } from '../lib/format'
-import { useClaimState } from '../lib/hooks'
-import type { CanonicalValue, ClaimState, ProcedureItem } from '../lib/types'
+import { useChecks, useClaimState, useFindingAction, useFindings } from '../lib/hooks'
+import type { CanonicalValue, ClaimState, Finding, FindingAction, ProcedureItem } from '../lib/types'
 
 export function ClaimOverviewPage() {
   const { claimId = '' } = useParams()
   const query = useClaimState(claimId)
+  const findings = useFindings(claimId)
+  const checks = useChecks(claimId)
+  const findingAction = useFindingAction(claimId)
   const [evidence, setEvidence] = useState<EvidenceRequest | null>(null)
+  const [actionError, setActionError] = useState<string | null>(null)
+  const [pendingFinding, setPendingFinding] = useState<string | null>(null)
+
+  function runAction(finding: Finding, action: FindingAction) {
+    setActionError(null)
+    setPendingFinding(finding.id)
+    findingAction.mutate(
+      { findingId: finding.id, action },
+      {
+        onError: (error) => setActionError(errorMessage(error)),
+        onSettled: () => setPendingFinding(null),
+      },
+    )
+  }
 
   if (query.isPending) return <OverviewSkeleton />
   const notFound = query.error instanceof ApiError && query.error.status === 404
@@ -114,6 +133,73 @@ export function ClaimOverviewPage() {
 
       <div className="grid grid-cols-1 items-start gap-6 xl:grid-cols-[minmax(0,1fr)_340px]">
         <div className="space-y-6">
+          <Card data-testid="findings-card">
+            <CardHeader
+              title="Findings"
+              description="Deterministic checks across the documents. Every finding says what differs and what to do about it."
+              actions={
+                findings.data ? (
+                  <span className="flex flex-wrap items-center gap-1.5">
+                    {findings.data.summary.active_by_severity.critical > 0 && (
+                      <Badge tone="danger">{findings.data.summary.active_by_severity.critical} critical</Badge>
+                    )}
+                    {findings.data.summary.active_by_severity.review > 0 && (
+                      <Badge tone="warning">{findings.data.summary.active_by_severity.review} review</Badge>
+                    )}
+                    {findings.data.summary.active_by_severity.warning > 0 && (
+                      <Badge tone="info">{findings.data.summary.active_by_severity.warning} warning</Badge>
+                    )}
+                    {findings.data.summary.active === 0 && <Badge tone="success">Nothing open</Badge>}
+                  </span>
+                ) : undefined
+              }
+            />
+            {actionError && (
+              <div className="px-5 pt-4">
+                <Notice tone="danger" onDismiss={() => setActionError(null)}>
+                  {actionError}
+                </Notice>
+              </div>
+            )}
+            {findings.isPending ? (
+              <div className="space-y-3 p-5">
+                <Skeleton className="h-16 rounded-lg" />
+                <Skeleton className="h-16 rounded-lg" />
+              </div>
+            ) : findings.data ? (
+              <FindingsPanel
+                findings={findings.data.items}
+                summary={findings.data.summary}
+                onOpenEvidence={setEvidence}
+                onAction={runAction}
+                pendingAction={pendingFinding}
+              />
+            ) : (
+              <p className="px-5 py-6 text-sm text-slate-500">{findings.error?.message ?? 'Findings are unavailable.'}</p>
+            )}
+          </Card>
+
+          <Card data-testid="checks-card">
+            <CardHeader
+              title="Checks performed"
+              description={
+                checks.data
+                  ? `${checks.data.count} checks · rules version ${checks.data.rules_version}`
+                  : 'The validation engine record'
+              }
+            />
+            {checks.isPending ? (
+              <div className="space-y-2 p-5">
+                <Skeleton className="h-10 rounded-lg" />
+                <Skeleton className="h-10 rounded-lg" />
+              </div>
+            ) : checks.data ? (
+              <ChecksPanel checks={checks.data.items} />
+            ) : (
+              <p className="px-5 py-6 text-sm text-slate-500">{checks.error?.message ?? 'Checks are unavailable.'}</p>
+            )}
+          </Card>
+
           <Card data-testid="patient-panel">
             <CardHeader
               title="Patient"

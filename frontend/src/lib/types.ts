@@ -235,13 +235,15 @@ export interface EvidenceSource {
   source_type_label: string
   extraction_method: string
   confidence: number | null
-  weight: number
+  /** How much this document counted in canonical value selection; absent for finding evidence. */
+  weight: number | null
   eligible: boolean
   excluded_reason: string | null
   value: string | null
   raw_value: string | null
   field_key: string
   derived_from: string | null
+  detail?: string | null
   evidence_available: boolean
 }
 
@@ -440,6 +442,7 @@ export interface ClaimState {
     count: number
     items: DocumentInventoryItem[]
     by_type: Record<string, number>
+    excluded_count: number
     note: string | null
   }
   bills: {
@@ -464,4 +467,116 @@ export interface ClaimState {
     document_count: number
     processed_count: number
   }
+}
+
+/** --- Validation and findings (phase 5) --- */
+
+export type Severity = 'critical' | 'review' | 'warning' | 'info'
+export type FindingStatus = 'open' | 'resolved' | 'acknowledged' | 'auto_closed' | 'reopened'
+export type FindingAction = 'review' | 'resolve' | 'acknowledge' | 'reopen' | 'exclude_duplicate'
+export type CheckStatus = 'pass' | 'fail' | 'pending' | 'not_applicable'
+
+export interface FindingEvidence {
+  kind: string
+  document_id: string | null
+  document_name: string | null
+  document_type: string | null
+  document_type_label: string | null
+  page: number | null
+  bounding_box: number[] | null
+  snippet: string | null
+  method: string
+  source_type: string | null
+  confidence: number | null
+  value: string | null
+  field_key: string | null
+  detail: string | null
+  evidence_available: boolean
+}
+
+export interface Finding {
+  id: string
+  claim_id: string
+  rule_id: string
+  code: string
+  category: string
+  severity: Severity
+  title: string
+  explanation: string
+  action: string
+  attribution: 'rule' | 'source' | 'ai'
+  subject: string
+  fingerprint: string
+  status: FindingStatus
+  status_note: string | null
+  status_actor: string | null
+  status_changed_at: string | null
+  reviewed_at: string | null
+  reviewed_by: string | null
+  occurrences: number
+  first_seen_at: string
+  last_seen_at: string
+  evidence: FindingEvidence[]
+  context: Record<string, unknown>
+  is_active: boolean
+  actions_available: FindingAction[]
+}
+
+export interface FindingSummary {
+  total: number
+  active: number
+  by_severity: Record<string, number>
+  active_by_severity: Record<string, number>
+  by_status: Record<string, number>
+}
+
+export interface ValidationRun {
+  rules_version: number
+  input_fingerprint: string
+  findings_raised: number
+  findings_created: number
+  findings_auto_closed: number
+  findings_reopened: number
+  duration_ms: number | null
+  summary: Record<string, unknown>
+  created_at: string
+  updated_at: string
+}
+
+export interface FindingsResponse {
+  claim_id: string
+  claim_number: string
+  count: number
+  summary: FindingSummary
+  run: ValidationRun | null
+  items: Finding[]
+}
+
+export interface ValidationCheck {
+  check_id: string
+  title: string
+  category: string
+  status: CheckStatus
+  detail: string
+  rule_ids: string[]
+  finding_count: number
+  finding_codes: string[]
+  finding_fingerprints: string[]
+  severity: Severity | null
+  subjects_checked: number
+}
+
+export interface ChecksResponse {
+  claim_id: string
+  claim_number: string
+  rules_version: number
+  count: number
+  summary: Record<string, number>
+  run: ValidationRun | null
+  items: ValidationCheck[]
+}
+
+export interface FindingActionResult {
+  finding: Finding
+  summary: FindingSummary
 }

@@ -82,6 +82,14 @@ class Document(Base):
     uploaded_by: Mapped[str] = mapped_column(String(120))
     uploaded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
+    # --- validation (phase 5) ---
+    # Set when a duplicate copy is excluded from the claim; an excluded document stops
+    # supplying values to the canonical claim.
+    excluded: Mapped[bool] = mapped_column(Boolean, default=False)
+    exclusion_reason: Mapped[str | None] = mapped_column(String(300))
+    duplicate_of: Mapped[str | None] = mapped_column(String(36))
+    duplicate_state: Mapped[str] = mapped_column(String(24), default="not_evaluated")
+
     # --- document intelligence (phase 3) ---
     # pending -> queued -> processing -> processed | failed
     processing_status: Mapped[str] = mapped_column(String(32), default="pending", index=True)
@@ -225,6 +233,69 @@ class ClaimState(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
 
+class Finding(Base):
+    """One validation finding, with the lifecycle a person moves it through.
+
+    A finding is identified by its fingerprint (rule and subject), not by its evidence, so
+    re-running validation updates the finding that already exists instead of creating another.
+    """
+
+    __tablename__ = "findings"
+    __table_args__ = (UniqueConstraint("claim_id", "fingerprint", name="uq_finding_fingerprint"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    claim_id: Mapped[str] = mapped_column(ForeignKey("claims.id", ondelete="CASCADE"), index=True)
+    rule_id: Mapped[str] = mapped_column(String(16), index=True)
+    code: Mapped[str] = mapped_column(String(64), index=True)
+    category: Mapped[str] = mapped_column(String(32))
+    severity: Mapped[str] = mapped_column(String(16), index=True)
+    title: Mapped[str] = mapped_column(String(300))
+    explanation: Mapped[str] = mapped_column(Text)
+    action: Mapped[str] = mapped_column(String(500))
+    # rule = deterministic comparison, source = a measurement made while reading the document,
+    # ai = produced by a language model (nothing in phase 5 is).
+    attribution: Mapped[str] = mapped_column(String(16), default="rule")
+    subject: Mapped[str] = mapped_column(String(200))
+    fingerprint: Mapped[str] = mapped_column(String(64), index=True)
+    evidence: Mapped[list] = mapped_column(JSONType, default=list)
+    context: Mapped[dict] = mapped_column(JSONType, default=dict)
+
+    status: Mapped[str] = mapped_column(String(16), default="open", index=True)
+    status_note: Mapped[str | None] = mapped_column(String(500))
+    status_actor: Mapped[str | None] = mapped_column(String(120))
+    status_changed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    reviewed_by: Mapped[str | None] = mapped_column(String(120))
+
+    occurrences: Mapped[int] = mapped_column(Integer, default=1)
+    first_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+
+class ValidationRun(Base):
+    """The record of the last validation pass over a claim: which checks ran and what they said."""
+
+    __tablename__ = "validation_runs"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    claim_id: Mapped[str] = mapped_column(ForeignKey("claims.id", ondelete="CASCADE"), index=True, unique=True)
+    rules_version: Mapped[int] = mapped_column(Integer, default=1)
+    # Fingerprint of the processed documents this run was based on; used to tell a stale
+    # record from a current one.
+    input_fingerprint: Mapped[str] = mapped_column(String(64))
+    checks: Mapped[list] = mapped_column(JSONType, default=list)
+    summary: Mapped[dict] = mapped_column(JSONType, default=dict)
+    findings_raised: Mapped[int] = mapped_column(Integer, default=0)
+    findings_created: Mapped[int] = mapped_column(Integer, default=0)
+    findings_auto_closed: Mapped[int] = mapped_column(Integer, default=0)
+    findings_reopened: Mapped[int] = mapped_column(Integer, default=0)
+    duration_ms: Mapped[int | None] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+
 class AuditEvent(Base):
     __tablename__ = "audit_events"
 
@@ -246,7 +317,20 @@ WORKSPACE_MODELS = (
     ExtractedField,
     DocumentBill,
     ClaimState,
+    Finding,
+    ValidationRun,
     AuditEvent,
 )
 
 PROCESSING_STATUSES = ("pending", "queued", "processing", "processed", "failed")
+
+# Finding lifecycle. A finding is raised by a rule and moved on by a person.
+FINDING_OPEN = "open"
+FINDING_RESOLVED = "resolved"
+FINDING_ACKNOWLEDGED = "acknowledged"
+FINDING_AUTO_CLOSED = "auto_closed"
+FINDING_REOPENED = "reopened"
+FINDING_STATUSES = (FINDING_OPEN, FINDING_RESOLVED, FINDING_ACKNOWLEDGED, FINDING_AUTO_CLOSED, FINDING_REOPENED)
+# Statuses that still need someone to act.
+FINDING_ACTIVE_STATUSES = (FINDING_OPEN, FINDING_REOPENED)
+SEVERITIES = ("critical", "review", "warning", "info")

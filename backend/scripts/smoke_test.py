@@ -32,7 +32,10 @@ from app.models import (  # noqa: E402
     DocumentBill,
     DocumentPage,
     ExtractedField,
+    Finding,
+    ValidationRun,
 )
+from app.validation.rules import FORBIDDEN_WORDS  # noqa: E402
 
 
 class SmokeFailure(AssertionError):
@@ -229,26 +232,133 @@ def main() -> int:
     check("1,000.00" not in json.dumps(state), "covered text never reaches the canonical claim")
     check(state["documents"]["count"] == 18, "document inventory lists all 18 documents")
     check(
-        all(item["duplicate_state"] == "not_evaluated" for item in state["documents"]["items"]),
-        "duplicate state is left for a later phase",
-    )
-    check(
-        all(not state[section]["available"] and state[section]["items"] == [] for section in ("checklist", "findings", "questions", "resolutions")),
-        "checklist, findings, questions and resolutions are present and empty",
+        all(not state[section]["available"] and state[section]["items"] == [] for section in ("checklist", "questions", "resolutions")),
+        "checklist, questions and resolutions are present and empty",
     )
 
-    status, again = call(base, "GET", f"/api/claims/{second['id']}/state")
+    print("8. Cross-document validation")
+    status, complete = call(base, "GET", f"/api/claims/{second['id']}/findings")
+    check(status == 200, "findings served for the complete claim")
+    complete_codes = sorted(item["code"] for item in complete["items"] if item["status"] in ("open", "reopened"))
     check(
-        again["snapshot"]["content_sha256"] == state["snapshot"]["content_sha256"],
-        f"rebuilding the canonical claim is deterministic ({state['snapshot']['content_sha256'][:12]}…)",
+        "MISSING_REQUIRED_DOCUMENT" not in complete_codes,
+        f"no required document is missing once all 18 are present ({len(complete_codes)} open findings)",
     )
     check(
-        json.dumps({k: v for k, v in again.items() if k != "snapshot"}, sort_keys=True)
-        == json.dumps({k: v for k, v in state.items() if k != "snapshot"}, sort_keys=True),
+        "IMPLANT_USAGE_NOT_CORROBORATED" not in complete_codes,
+        "the billed implant is corroborated by the operative note",
+    )
+    expected_open = [
+        "BILL_ARITHMETIC_MISMATCH",
+        "DUPLICATE_BILL_NUMBER",
+        "DUPLICATE_DOCUMENT",
+        "LOW_QUALITY_PAGE",
+        "NAME_VARIANT",
+        "PATIENT_NAME_MISMATCH",
+        "POTENTIAL_ALTERATION",
+        "SIGNATURE_NOT_DETECTED",
+    ]
+    check(complete_codes == expected_open, f"open findings: {complete_codes}")
+    check(
+        complete["summary"]["by_severity"]["critical"] >= 1 and complete["summary"]["by_severity"]["info"] == 1,
+        f"severities: {complete['summary']['by_severity']}",
+    )
+    text = json.dumps(complete).lower()
+    check(not [word for word in FORBIDDEN_WORDS if word in text], "no finding uses accusatory wording")
+    for item in complete["items"]:
+        if item["code"] == "MISSING_REQUIRED_DOCUMENT":
+            continue
+        if not item["evidence"]:
+            raise SmokeFailure(f"{item['code']} carries no evidence")
+        for evidence in item["evidence"]:
+            if not evidence["document_id"] or not evidence["page"]:
+                raise SmokeFailure(f"{item['code']} evidence does not point at a page")
+    check(True, "every finding that claims evidence points at a document and a page")
+
+    status, validated_state = call(base, "GET", f"/api/claims/{second['id']}/state")
+    duplicate_states = {item["duplicate_state"] for item in validated_state["documents"]["items"]}
+    check(
+        duplicate_states <= {"unique", "duplicate", "has_duplicate"} and "duplicate" in duplicate_states,
+        f"the duplicate state of every document is evaluated: {sorted(duplicate_states)}",
+    )
+    check(
+        validated_state["findings"]["available"] and validated_state["findings"]["count"] == complete["count"],
+        "the canonical claim carries the findings of this claim",
+    )
+
+    status, rebuilt = call(base, "GET", f"/api/claims/{second['id']}/state")
+    check(
+        rebuilt["snapshot"]["content_sha256"] == validated_state["snapshot"]["content_sha256"],
+        f"rebuilding the canonical claim is deterministic ({rebuilt['snapshot']['content_sha256'][:12]}…)",
+    )
+    check(
+        json.dumps({k: v for k, v in rebuilt.items() if k != "snapshot"}, sort_keys=True)
+        == json.dumps({k: v for k, v in validated_state.items() if k != "snapshot"}, sort_keys=True),
         "the two builds are byte-identical",
     )
 
-    print(f"8. Database and storage ({dialect})")
+    status, checks_payload = call(base, "GET", f"/api/claims/{second['id']}/checks")
+    check(status == 200 and checks_payload["count"] == 20, f"20 checks recorded: {checks_payload['summary']}")
+    by_id = {item["check_id"]: item for item in checks_payload["items"]}
+    check(by_id["required_documents"]["status"] == "pass", "required documents check passes")
+    check(by_id["operative_documentation"]["status"] == "pass", "operative documentation check ran")
+    check(by_id["implant_corroboration"]["status"] == "pass", "implant corroboration check passes")
+    check(by_id["date_sequence"]["status"] == "pass", "date sequence check passes")
+
+    print("9. Validation of the 16-document claim (the staged demo)")
+    status, staged_processing = call(base, "POST", f"/api/claims/{first['id']}/analyze")
+    deadline = time.monotonic() + 300
+    while time.monotonic() < deadline:
+        status, staged_processing = call(base, "GET", f"/api/claims/{first['id']}/processing")
+        if staged_processing["state"] != "running":
+            break
+        time.sleep(0.4)
+    check(
+        staged_processing["state"] == "completed",
+        f"16 documents analysed: {staged_processing['counts']}",
+    )
+    status, partial = call(base, "GET", f"/api/claims/{first['id']}/findings")
+    partial_codes = sorted(item["code"] for item in partial["items"])
+    missing = [item for item in partial["items"] if item["code"] == "MISSING_REQUIRED_DOCUMENT"]
+    check(
+        sorted(item["context"]["requirement"] for item in missing) == ["anaesthesia_record", "operative_note"],
+        "the operative note and the anaesthesia record are reported as missing",
+    )
+    check(all(item["evidence"] == [] for item in missing), "a missing document invents no evidence")
+    check("IMPLANT_USAGE_NOT_CORROBORATED" in partial_codes, "the billed implant is not corroborated yet")
+    status, partial_checks = call(base, "GET", f"/api/claims/{first['id']}/checks")
+    partial_by_id = {item["check_id"]: item for item in partial_checks["items"]}
+    check(partial_by_id["operative_documentation"]["status"] == "pending", "checks that need the operative note wait")
+    check(partial_by_id["required_documents"]["status"] == "fail", "the required documents check fails")
+
+    print("10. Finding lifecycle")
+    name_finding = next(item for item in partial["items"] if item["code"] == "PATIENT_NAME_MISMATCH")
+    status, reviewed = post_json(base, f"/api/findings/{name_finding['id']}/action", {"action": "review", "note": "Called the hospital"})
+    check(status == 200 and reviewed["finding"]["status"] == "open", "review records the reviewer without closing the finding")
+    status, resolved = post_json(base, f"/api/findings/{name_finding['id']}/action", {"action": "resolve"})
+    check(status == 200 and resolved["finding"]["status"] == "resolved", "resolve moves the finding to resolved")
+    status, refused = post_json(base, f"/api/findings/{name_finding['id']}/action", {"action": "acknowledge"})
+    check(status == 409, "an invalid transition is refused")
+    status, again = call(base, "POST", f"/api/claims/{first['id']}/validate")
+    check(again["findings_created"] == 0, "validating again creates nothing new")
+    status, after = call(base, "GET", f"/api/claims/{first['id']}/findings")
+    still_resolved = next(item for item in after["items"] if item["id"] == name_finding["id"])
+    check(still_resolved["status"] == "resolved", "a human decision survives a new validation run")
+    duplicate = next(item for item in after["items"] if item["code"] == "DUPLICATE_DOCUMENT")
+    status, excluded = post_json(base, f"/api/findings/{duplicate['id']}/action", {"action": "exclude_duplicate"})
+    check(status == 200 and excluded["finding"]["status"] == "resolved", "excluding a duplicate resolves its finding")
+    status, claim_state = call(base, "GET", f"/api/claims/{first['id']}/state")
+    copy = next(item for item in claim_state["documents"]["items"] if item["filename"] == "11_Lab_Report_copy.pdf")
+    check(
+        copy["excluded"] and copy["duplicate_state"] == "excluded" and copy["duplicate_of"],
+        "the excluded copy is marked in the document inventory",
+    )
+    check(
+        claim_state["findings"]["available"] and claim_state["findings"]["count"] == after["count"],
+        "the canonical claim carries the findings summary",
+    )
+
+    print(f"11. Database and storage ({dialect})")
     engine = make_engine(settings.database_url)
     try:
         with Session(engine) as session:
@@ -265,6 +375,9 @@ def main() -> int:
                     raise SmokeFailure(f"{path} does not match its recorded SHA-256")
             check(True, "all 34 stored originals are read-only (0444) and match their SHA-256")
             counts = dict(session.execute(select(AuditEvent.event_type, func.count()).group_by(AuditEvent.event_type)).all())
+            # Validation runs whenever the documents change, so its count depends on timing;
+            # everything else is fixed by what this script did.
+            validation_runs = counts.pop("validation_completed", 0)
             check(
                 counts
                 == {
@@ -272,18 +385,27 @@ def main() -> int:
                     "claim_created": 2,
                     "document_uploaded": 34,
                     "demo_pack_attached": 3,
-                    "claim_analysis_started": 1,
-                    "document_processed": 18,
-                    "claim_analysis_completed": 1,
+                    "claim_analysis_started": 2,
+                    "document_processed": 34,
+                    "claim_analysis_completed": 2,
+                    "finding_action": 3,
+                    "document_excluded": 1,
                 },
                 f"audit events: {counts}",
             )
-            pages = session.scalar(select(func.count()).select_from(DocumentPage))
+            check(validation_runs >= 2, f"validation ran for both claims ({validation_runs} runs recorded)")
+            pages = session.scalar(
+                select(func.count()).select_from(DocumentPage).where(DocumentPage.claim_id == second["id"])
+            )
             expected_pages = sum(e["pages"] for entries in manifest["sets"].values() for e in entries)
             check(pages == expected_pages, f"{pages} page rows stored (one per page of the 18 documents)")
-            fields = session.scalar(select(func.count()).select_from(ExtractedField))
+            fields = session.scalar(
+                select(func.count()).select_from(ExtractedField).where(ExtractedField.claim_id == second["id"])
+            )
             check(fields > 120, f"{fields} extracted fields stored with evidence")
-            bills = session.scalar(select(func.count()).select_from(DocumentBill))
+            bills = session.scalar(
+                select(func.count()).select_from(DocumentBill).where(DocumentBill.claim_id == second["id"])
+            )
             check(bills == 4, f"{bills} bills read (hospital, pharmacy, OT, implant invoice)")
             unprocessed = session.scalar(
                 select(func.count()).select_from(Document).where(Document.processing_status != "processed", Document.claim_id == second["id"])
@@ -292,13 +414,22 @@ def main() -> int:
             snapshot = session.scalar(select(ClaimState).where(ClaimState.claim_id == second["id"]))
             check(snapshot is not None, "canonical snapshot stored")
             check(
-                snapshot.content_sha256 == state["snapshot"]["content_sha256"] and snapshot.processed_count == 18,
+                snapshot.content_sha256 == rebuilt["snapshot"]["content_sha256"] and snapshot.processed_count == 18,
                 "stored snapshot matches what the API served",
             )
             check(
                 snapshot.payload["patient"]["fields"]["name"]["value"] == "Rajesh Sharma",
                 "stored snapshot holds the canonical values",
             )
+            findings_rows = session.scalars(select(Finding).where(Finding.claim_id == second["id"])).all()
+            check(len(findings_rows) >= 8, f"{len(findings_rows)} findings stored for the complete claim")
+            check(
+                len({row.fingerprint for row in findings_rows}) == len(findings_rows),
+                "every stored finding has its own fingerprint",
+            )
+            runs = session.scalars(select(ValidationRun)).all()
+            check(len(runs) == 2, f"one validation record per validated claim ({len(runs)})")
+            check(all(len(run.checks) == 20 for run in runs), "each validation record holds all 20 checks")
             images = list((settings.storage_dir / "claims" / second["id"] / "pages").rglob("*.png"))
             check(len(images) == expected_pages, f"{len(images)} rendered page images on disk")
             originals_before = session.scalars(

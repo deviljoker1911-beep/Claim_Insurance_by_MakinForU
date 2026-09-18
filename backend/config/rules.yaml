@@ -1,0 +1,276 @@
+# Cross-document validation rules (Phase 5).
+#
+# Every rule is deterministic: the same documents always produce the same findings. A rule
+# states what was compared, what it found, and what a person should do about it — never a
+# verdict about intent. The wording rules are part of the product: a finding says
+# "verification required", "inconsistency", "not corroborated", "potential alteration";
+# it never says fraud, forgery or fake.
+version: 1
+rules_version: 1
+
+# Documents a surgical in-patient claim is expected to carry. The procedure-specific
+# checklist is phase 6; this is the baseline every such claim needs.
+required_documents:
+  - key: admission_record
+    label: Admission record
+    doc_types: [admission_record]
+  - key: consent
+    label: Informed consent
+    doc_types: [consent]
+  - key: operative_note
+    label: Operative note
+    doc_types: [operative_note]
+  - key: anaesthesia_record
+    label: Anaesthesia record
+    doc_types: [anaesthesia_record]
+  - key: discharge_summary
+    label: Discharge summary
+    doc_types: [discharge_summary]
+  - key: hospital_bill
+    label: Hospital bill
+    doc_types: [hospital_bill]
+
+settings:
+  # Bill arithmetic is checked to the rupee. A tolerance only applies where it is set here.
+  bill_amount_tolerance: "0.00"
+  # A page counts as a duplicate of another only when its text and its image both match.
+  duplicate_page:
+    text_similarity: 0.95
+    dhash_max_distance: 5
+    min_characters: 40
+  # Phase 3 quality signals of these severities become findings; the rest stay signals.
+  quality_finding_severities: [review]
+  # Documents that can corroborate that a billed implant was used.
+  implant_corroboration_doc_types: [operative_note, anaesthesia_record]
+  implant_bill_types: [implant_invoice]
+
+rules:
+  - rule_id: R001
+    code: MISSING_REQUIRED_DOCUMENT
+    category: completeness
+    severity: critical
+    attribution: rule
+    title: "{label} is missing"
+    explanation: >-
+      No document in this claim was classified as {label_lower}. The requirement is checked
+      against the document types found in the claim, not against file names.
+    action: "Upload the {label_lower}, or record why it does not exist for this admission."
+    evidence: none
+
+  - rule_id: R002
+    code: POTENTIAL_ALTERATION
+    category: integrity
+    severity: critical
+    attribution: source
+    title: "Potential alteration on {document_name} page {page}"
+    explanation: >-
+      {count} value(s) on this page are covered by opaque paint, so a reader never sees them
+      while they remain in the file: {covered}. The visible value is the one used everywhere in
+      this claim. Human verification required.
+    action: "Open the page, compare the covered and visible values, and confirm the correct amount with the issuer."
+    evidence: required
+
+  - rule_id: R003
+    code: PATIENT_NAME_MISMATCH
+    category: identity
+    severity: review
+    attribution: rule
+    title: "Patient name differs on {source_count} document(s)"
+    explanation: >-
+      The claim documents state "{canonical}" ({canonical_sources} document(s)), while
+      {documents} state "{other}". Names are compared without honorifics, case or punctuation,
+      so this is a different name rather than a different spelling.
+    action: "Confirm the patient's name with the hospital and have the document corrected or explained."
+    evidence: required
+
+  - rule_id: R004
+    code: UHID_MISMATCH
+    category: identity
+    severity: review
+    attribution: rule
+    title: "UHID differs on {source_count} document(s)"
+    explanation: >-
+      The claim documents state UHID "{canonical}", while {documents} state "{other}".
+      Identifiers are compared without punctuation or case.
+    action: "Confirm the hospital identification number and have the document corrected."
+    evidence: required
+
+  - rule_id: R005
+    code: CLAIM_FORM_MISMATCH
+    category: identity
+    severity: review
+    attribution: rule
+    title: "Claim form {field_label} does not match the documents"
+    explanation: >-
+      The claim form was created with {field_label} "{form_value}", while the documents state
+      "{document_value}" ({source_count} document(s)).
+    action: "Correct the claim form, or confirm which value belongs on the submission."
+    evidence: required
+
+  - rule_id: R006
+    code: ADMISSION_DATE_MISMATCH
+    category: dates
+    severity: review
+    attribution: rule
+    title: "Admission date differs between documents"
+    explanation: >-
+      The documents state {canonical} ({canonical_sources} document(s)), while {documents}
+      state {other}. Dates are compared as calendar dates, so different formats of the same
+      day are not reported.
+    action: "Confirm the admission date and have the document corrected."
+    evidence: required
+
+  - rule_id: R007
+    code: DISCHARGE_DATE_MISMATCH
+    category: dates
+    severity: review
+    attribution: rule
+    title: "Discharge date differs between documents"
+    explanation: >-
+      The documents state {canonical} ({canonical_sources} document(s)), while {documents}
+      state {other}. Dates are compared as calendar dates.
+    action: "Confirm the discharge date and have the document corrected."
+    evidence: required
+
+  - rule_id: R008
+    code: DATE_SEQUENCE_INVALID
+    category: dates
+    severity: review
+    attribution: rule
+    title: "{detail_title}"
+    explanation: "{detail}"
+    action: "Check the dates on the source documents; one of them is recorded incorrectly."
+    evidence: optional
+
+  - rule_id: R009
+    code: DIAGNOSIS_INCONSISTENT
+    category: clinical
+    severity: review
+    attribution: rule
+    title: "Diagnosis differs between documents"
+    explanation: >-
+      The documents state "{canonical}" ({canonical_sources} document(s)), while {documents}
+      state "{other}".
+    action: "Have the treating team confirm the diagnosis that belongs on the claim."
+    evidence: required
+
+  - rule_id: R010
+    code: PROCEDURE_INCONSISTENT
+    category: clinical
+    severity: review
+    attribution: rule
+    title: "More than one procedure is named across the documents"
+    explanation: >-
+      The documents name "{canonical}" ({canonical_sources} document(s)) and "{other}"
+      ({other_sources} document(s)). Short forms of the same operation are grouped together, so
+      these are different procedures.
+    action: "Confirm which procedure was performed and which documents belong to this claim."
+    evidence: required
+
+  - rule_id: R011
+    code: DOCTOR_MISMATCH
+    category: clinical
+    severity: review
+    attribution: rule
+    title: "{role_label} differs between documents"
+    explanation: >-
+      The documents state {canonical} ({canonical_sources} document(s)), while {documents}
+      state {other}. Names are compared without honorifics or qualifications.
+    action: "Confirm who {role_lower} for this admission."
+    evidence: required
+
+  - rule_id: R012
+    code: DUPLICATE_BILL_NUMBER
+    category: billing
+    severity: review
+    attribution: rule
+    title: "Bill number {bill_number} is used by {count} bills"
+    explanation: >-
+      {documents} all carry bill number {bill_number} with different totals ({totals}). A bill
+      number is expected to identify one bill.
+    action: "Ask the hospital for correctly numbered bills before the claim is submitted."
+    evidence: required
+
+  - rule_id: R013
+    code: BILL_ARITHMETIC_MISMATCH
+    category: billing
+    severity: review
+    attribution: rule
+    title: "{subject_label} does not add up on {document_name}"
+    explanation: "{detail}"
+    action: "Ask the hospital billing desk to correct the bill or explain the difference."
+    evidence: required
+
+  - rule_id: R014
+    code: SIGNATURE_NOT_DETECTED
+    category: integrity
+    severity: review
+    attribution: source
+    title: "{slot_label} signature is not present on {document_name}"
+    explanation: >-
+      The {slot_lower} signature area was found on page {page} and carries no signature ink.
+      Stamps and printed rules are not counted as signatures.
+    action: "Obtain the signature, or supply a signed copy of the document."
+    evidence: required
+
+  - rule_id: R015
+    code: IMPLANT_USAGE_NOT_CORROBORATED
+    category: clinical
+    severity: review
+    attribution: rule
+    title: "Billed implant is not corroborated by an operative document"
+    explanation: >-
+      {document_name} bills {description} ({quantity} × {rate} = {amount}). No operative note or
+      anaesthesia record in this claim records the use of this implant, so the billed item has
+      nothing to corroborate it yet.
+    action: "Supply the operative note that records the implant, or ask the hospital to confirm its use."
+    evidence: required
+
+  - rule_id: R016
+    code: DUPLICATE_DOCUMENT
+    category: duplicates
+    severity: warning
+    attribution: rule
+    title: "{document_name} is byte-identical to {original_name}"
+    explanation: >-
+      Both files have the same SHA-256 fingerprint ({sha256_short}), so they are the same
+      document uploaded twice. Only one copy needs to go with the claim.
+    action: "Exclude the extra copy from the claim, or keep both if the insurer asked for them."
+    evidence: required
+
+  - rule_id: R017
+    code: DUPLICATE_PAGE
+    category: duplicates
+    severity: warning
+    attribution: rule
+    title: "Page {page} of {document_name} repeats page {original_page} of {original_name}"
+    explanation: >-
+      The two pages carry the same text ({text_similarity}% match) and the same image
+      fingerprint (difference {dhash_distance}/64), so one page appears twice in this claim.
+      Pages that merely describe similar care are not reported.
+    action: "Check whether the page was scanned twice, and exclude the repeated page if so."
+    evidence: required
+
+  - rule_id: R018
+    code: LOW_QUALITY_PAGE
+    category: quality
+    severity: warning
+    attribution: source
+    title: "{document_name} page {page} may be hard to read"
+    explanation: >-
+      Measured on the page itself: {signals}. An insurer may return a document that cannot be
+      read reliably.
+    action: "Rescan the page at 300 dpi, straight and in focus, if a clearer copy exists."
+    evidence: required
+
+  - rule_id: R019
+    code: NAME_VARIANT
+    category: identity
+    severity: info
+    attribution: rule
+    title: "{label} is written differently on some documents"
+    explanation: >-
+      Every document means the same {label_lower} — "{canonical}" — but it is printed as
+      {variants}. This is a spelling variation, not a different {label_lower}.
+    action: "No action is needed; it is recorded so the difference is not mistaken for a mismatch."
+    evidence: optional

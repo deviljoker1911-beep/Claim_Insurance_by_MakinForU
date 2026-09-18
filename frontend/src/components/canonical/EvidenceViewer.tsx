@@ -113,10 +113,12 @@ function SourceSummary({ source }: { source: EvidenceSource }) {
           {source.confidence === null ? '—' : `${Math.round(source.confidence * 100)}%`}
         </dd>
       </div>
-      <div>
-        <dt className="text-xs text-slate-500">Document weight in selection</dt>
-        <dd className="font-medium text-slate-900 tabular-nums">×{source.weight}</dd>
-      </div>
+      {source.weight !== null && (
+        <div>
+          <dt className="text-xs text-slate-500">Document weight in selection</dt>
+          <dd className="font-medium text-slate-900 tabular-nums">×{source.weight}</dd>
+        </div>
+      )}
       <div>
         <dt className="text-xs text-slate-500">Value on this page</dt>
         <dd className="font-medium text-slate-900">{source.value ?? '—'}</dd>
@@ -125,6 +127,12 @@ function SourceSummary({ source }: { source: EvidenceSource }) {
         <div className="col-span-2">
           <dt className="text-xs text-slate-500">Read from</dt>
           <dd className="font-medium text-slate-900">{source.derived_from}</dd>
+        </div>
+      )}
+      {source.detail && (
+        <div className="col-span-2">
+          <dt className="text-xs text-slate-500">Note</dt>
+          <dd className="font-medium text-slate-900">{source.detail}</dd>
         </div>
       )}
       {source.snippet && (

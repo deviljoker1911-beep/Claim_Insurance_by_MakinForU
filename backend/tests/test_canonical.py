@@ -310,7 +310,9 @@ def test_the_shortened_name_on_the_pharmacy_bill_is_reported_as_a_competing_valu
     assert [source["document_name"] for source in competing[0]["sources"]] == ["13_Pharmacy_Bill.pdf"]
     assert competing[0]["sources"][0]["page"] == 1
     assert competing[0]["sources"][0]["bounding_box"]
-    assert analysed["state"]["findings"]["items"] == [], "findings are phase 5"
+    # The canonical claim reports the difference as provenance. Judging it is the validation
+    # engine's job, and its findings are listed in their own section.
+    assert analysed["state"]["findings"]["available"] is True
 
 
 def test_the_procedure_is_grouped_across_its_short_forms(analysed):
@@ -462,10 +464,15 @@ def test_the_document_inventory_describes_every_document(analysed):
         assert item["processing_status"] == "processed"
         assert item["page_count"] >= 1
         assert item["ocr_method"] in {"rapidocr", "demo_fixture", "pdf_text"}
-        assert item["duplicate_state"] == "not_evaluated", "duplicate detection is phase 5"
+        assert item["duplicate_state"] in ("unique", "duplicate", "has_duplicate")
         assert item["excluded"] is False
         assert item["extracted_field_count"] >= 1
         assert isinstance(item["quality_signals"], list)
+    copies = [item for item in documents["items"] if item["filename"].startswith(("10_Lab", "11_Lab"))]
+    assert {item["duplicate_state"] for item in copies} == {"has_duplicate", "duplicate"}
+    duplicate = next(item for item in copies if item["duplicate_state"] == "duplicate")
+    assert duplicate["duplicate_of"]
+
     usg = next(item for item in documents["items"] if item["filename"] == "09_USG_Abdomen_Scan.jpg")
     assert usg["quality_signal_count"] >= 2
     consent = next(item for item in documents["items"] if item["filename"] == "16_Consent_Form.pdf")
@@ -491,12 +498,14 @@ def test_investigations_are_listed_with_their_documents(analysed):
 
 def test_sections_whose_engines_are_not_built_yet_are_present_and_empty(analysed):
     state = analysed["state"]
-    for section, phase in (("findings", "phase 5"), ("checklist", "phase 6"), ("questions", "phase 7"), ("resolutions", "phase 7")):
+    for section, phase in (("checklist", "phase 6"), ("questions", "phase 7"), ("resolutions", "phase 7")):
         assert state[section]["available"] is False
         assert state[section]["items"] == []
         assert state[section]["count"] == 0
         assert phase in state[section]["note"]
-    assert set(state["meta"]["pending_sections"]) == {"checklist", "findings", "questions", "resolutions"}
+    assert set(state["meta"]["pending_sections"]) == {"checklist", "questions", "resolutions"}
+    # Findings arrived with the validation engine.
+    assert state["findings"]["available"] is True
 
 
 def test_the_snapshot_carries_the_audit_trail(analysed):
@@ -605,12 +614,10 @@ def test_the_snapshot_is_built_from_the_stored_state_alone(analysed):
 def test_the_state_of_a_claim_without_documents_is_coherent(client, claim):
     state = client.get(f"/api/claims/{claim['id']}/state").json()
     assert state["claim"]["claim_number"] == claim["claim_number"]
-    assert state["documents"] == {
-        "count": 0,
-        "items": [],
-        "by_type": {},
-        "note": "Duplicate and exclusion states are evaluated in phase 5.",
-    }
+    assert state["documents"]["count"] == 0
+    assert state["documents"]["items"] == []
+    assert state["documents"]["by_type"] == {}
+    assert state["documents"]["excluded_count"] == 0
     assert state["bills"]["count"] == 0
     assert state["procedures"]["items"] == []
     assert state["procedures"]["selected_key"] is None

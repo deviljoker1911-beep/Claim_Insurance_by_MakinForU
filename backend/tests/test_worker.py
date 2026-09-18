@@ -85,6 +85,8 @@ def test_queueing_is_recorded_and_the_claim_moves_to_processing(client, claim):
         "claim_analysis_started",
         "document_processed",
         "claim_analysis_completed",
+        # Analysis is followed by validation over what was just read.
+        "validation_completed",
     ]
     assert client.get(f"/api/claims/{claim['id']}").json()["status"] == "processed"
 

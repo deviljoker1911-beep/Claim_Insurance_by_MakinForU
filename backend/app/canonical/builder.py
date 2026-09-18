@@ -27,7 +27,16 @@ from app.canonical.selection import (
     select_value,
 )
 from app.config_files import canonical_config
-from app.models import AuditEvent, Claim, Document, DocumentBill, ExtractedField
+from app.models import (
+    FINDING_ACTIVE_STATUSES,
+    SEVERITIES,
+    AuditEvent,
+    Claim,
+    Document,
+    DocumentBill,
+    ExtractedField,
+    Finding,
+)
 from app.services import analysis as analysis_service
 
 
@@ -50,7 +59,8 @@ def _candidates(
         if document_id is not None and row.document_id != document_id:
             continue
         document = documents.get(row.document_id)
-        if document is None:
+        if document is None or document.excluded:
+            # A document excluded from the claim (a duplicate copy, say) no longer states values.
             continue
         details = row.details or {}
         value = details.get(spec.detail_key) if spec.detail_key else row.value_text
@@ -200,11 +210,10 @@ def _documents_section(documents: list[Document], fields: list[ExtractedField]) 
                 "sha256": document.sha256,
                 "size_bytes": document.size_bytes,
                 "uploaded_at": _iso(document.uploaded_at),
-                # Nothing excludes or deduplicates documents yet; both are evaluated in phase 5.
-                "excluded": False,
-                "exclusion_reason": None,
-                "duplicate_of": None,
-                "duplicate_state": "not_evaluated",
+                "excluded": bool(document.excluded),
+                "exclusion_reason": document.exclusion_reason,
+                "duplicate_of": document.duplicate_of,
+                "duplicate_state": document.duplicate_state,
             }
         )
     return {
@@ -214,7 +223,8 @@ def _documents_section(documents: list[Document], fields: list[ExtractedField]) 
             doc_type: sum(1 for item in items if item["doc_type"] == doc_type)
             for doc_type in sorted({item["doc_type"] for item in items if item["doc_type"]})
         },
-        "note": "Duplicate and exclusion states are evaluated in phase 5.",
+        "excluded_count": sum(1 for item in items if item["excluded"]),
+        "note": "An excluded document stays in the claim record but no longer states values.",
     }
 
 
@@ -317,6 +327,52 @@ def _bills(bills: list[DocumentBill], fields: list[ExtractedField], by_id: dict[
     }
 
 
+def _findings_section(findings: list[Finding]) -> dict:
+    """The findings of this claim as they stand. The rules that raise them run in phase 5."""
+    by_severity = {severity: 0 for severity in SEVERITIES}
+    active_by_severity = {severity: 0 for severity in SEVERITIES}
+    by_status: dict[str, int] = {}
+    for finding in findings:
+        by_severity[finding.severity] = by_severity.get(finding.severity, 0) + 1
+        by_status[finding.status] = by_status.get(finding.status, 0) + 1
+        if finding.status in FINDING_ACTIVE_STATUSES:
+            active_by_severity[finding.severity] = active_by_severity.get(finding.severity, 0) + 1
+    order = {severity: index for index, severity in enumerate(SEVERITIES)}
+    ordered = sorted(
+        findings,
+        key=lambda finding: (
+            0 if finding.status in FINDING_ACTIVE_STATUSES else 1,
+            order.get(finding.severity, 9),
+            finding.rule_id,
+            finding.subject,
+        ),
+    )
+    return {
+        "available": True,
+        "count": len(findings),
+        "active": sum(active_by_severity.values()),
+        "by_severity": by_severity,
+        "active_by_severity": active_by_severity,
+        "by_status": dict(sorted(by_status.items())),
+        "items": [
+            {
+                "id": finding.id,
+                "rule_id": finding.rule_id,
+                "code": finding.code,
+                "category": finding.category,
+                "severity": finding.severity,
+                "status": finding.status,
+                "title": finding.title,
+                "action": finding.action,
+                "subject": finding.subject,
+                "attribution": finding.attribution,
+                "evidence_count": len(finding.evidence or []),
+            }
+            for finding in ordered
+        ],
+    }
+
+
 def _audit_events(events: list[AuditEvent]) -> dict:
     limit = int(canonical_config().get("max_audit_events", 100))
     tail = events[-limit:]
@@ -356,6 +412,7 @@ def build_claim_state(session: Session, claim: Claim) -> dict:
     events = list(
         session.scalars(select(AuditEvent).where(AuditEvent.claim_id == claim.id).order_by(AuditEvent.id)).all()
     )
+    findings = list(session.scalars(select(Finding).where(Finding.claim_id == claim.id)).all())
 
     counts = {status: 0 for status in ("pending", "queued", "processing", "processed", "failed")}
     for document in documents:
@@ -409,6 +466,7 @@ def build_claim_state(session: Session, claim: Claim) -> dict:
         "investigations": _investigations(documents, fields, by_id),
         "documents": _documents_section(documents, fields),
         "bills": _bills(bills, fields, by_id),
+        "findings": _findings_section(findings),
         "audit_events": _audit_events(events),
     }
     for section, note in canonical_keys.PENDING_SECTIONS.items():

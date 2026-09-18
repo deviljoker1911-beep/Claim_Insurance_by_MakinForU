@@ -113,7 +113,6 @@ SECTIONS: tuple[str, ...] = (
 # so the shape of the canonical claim never changes underneath the interface.
 PENDING_SECTIONS: dict[str, str] = {
     "checklist": "The procedure document checklist is built in phase 6.",
-    "findings": "Cross-document validation findings are built in phase 5.",
     "questions": "Operator questions are built in phase 7.",
     "resolutions": "Question resolutions are built in phase 7.",
 }

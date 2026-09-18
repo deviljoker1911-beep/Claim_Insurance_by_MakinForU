@@ -309,11 +309,20 @@ def finish_claim_if_done(session: Session, claim_id: str) -> None:
         details={"processed": counts.get(STATUS_PROCESSED, 0), "failed": counts.get(STATUS_FAILED, 0)},
     )
     session.commit()
-    # Build the canonical claim from what was just extracted, so it is ready to be read.
+    # Build the canonical claim from what was just extracted, then validate it, so both are
+    # ready to be read. Neither failure may fail the analysis itself.
     try:
-        canonical_service.refresh(session, claim)
-    except Exception as exc:  # noqa: BLE001 — a snapshot failure must not fail the analysis
+        payload, _ = canonical_service.refresh(session, claim)
+    except Exception as exc:  # noqa: BLE001
         logger.exception("Could not build the canonical claim for %s: %s", claim.claim_number, exc)
+        session.rollback()
+        return
+    try:
+        from app.services import validation as validation_service
+
+        validation_service.refresh(session, claim, actor="system", state=payload)
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("Could not validate %s: %s", claim.claim_number, exc)
         session.rollback()
 
 

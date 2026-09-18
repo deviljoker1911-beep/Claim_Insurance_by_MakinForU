@@ -525,6 +525,7 @@ class DocumentsSectionOut(BaseModel):
     count: int
     items: list[DocumentInventoryItemOut] = []
     by_type: dict[str, int] = {}
+    excluded_count: int = 0
     note: str | None = None
 
 
@@ -596,6 +597,32 @@ class PendingSectionOut(BaseModel):
     count: int = 0
     items: list[Any] = []
     note: str
+
+
+class CanonicalFindingItemOut(BaseModel):
+    """A finding as the canonical claim lists it; the full record is on the findings endpoint."""
+
+    id: str
+    rule_id: str
+    code: str
+    category: str
+    severity: str
+    status: str
+    title: str
+    action: str
+    subject: str
+    attribution: str
+    evidence_count: int
+
+
+class CanonicalFindingsSectionOut(BaseModel):
+    available: bool
+    count: int
+    active: int
+    by_severity: dict[str, int]
+    active_by_severity: dict[str, int]
+    by_status: dict[str, int]
+    items: list[CanonicalFindingItemOut] = []
 
 
 class CanonicalAuditEventOut(BaseModel):
@@ -673,11 +700,152 @@ class ClaimStateOut(BaseModel):
     documents: DocumentsSectionOut
     bills: BillsSectionOut
     checklist: PendingSectionOut
-    findings: PendingSectionOut
+    findings: CanonicalFindingsSectionOut
     questions: PendingSectionOut
     resolutions: PendingSectionOut
     audit_events: AuditEventsSectionOut
     snapshot: SnapshotOut
+
+
+# --- Validation and findings (phase 5) ---------------------------------------------------
+
+
+class FindingEvidenceOut(BaseModel):
+    """Where a finding's facts came from. A page it cannot point at is reported as unavailable."""
+
+    kind: str
+    document_id: str | None = None
+    document_name: str | None = None
+    document_type: str | None = None
+    document_type_label: str | None = None
+    page: int | None = None
+    bounding_box: list[float] | None = None
+    snippet: str | None = None
+    method: str
+    source_type: str | None = None
+    confidence: float | None = None
+    value: str | None = None
+    field_key: str | None = None
+    detail: str | None = None
+    evidence_available: bool = False
+
+
+class FindingOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    claim_id: str
+    rule_id: str
+    code: str
+    category: str
+    severity: Literal["critical", "review", "warning", "info"]
+    title: str
+    explanation: str
+    action: str
+    attribution: Literal["rule", "source", "ai"]
+    subject: str
+    fingerprint: str
+    status: Literal["open", "resolved", "acknowledged", "auto_closed", "reopened"]
+    status_note: str | None = None
+    status_actor: str | None = None
+    status_changed_at: UTCDateTime | None = None
+    reviewed_at: UTCDateTime | None = None
+    reviewed_by: str | None = None
+    occurrences: int
+    first_seen_at: UTCDateTime
+    last_seen_at: UTCDateTime
+    evidence: list[FindingEvidenceOut] = []
+    context: dict[str, Any] = {}
+    is_active: bool = False
+    actions_available: list[str] = []
+
+
+class FindingSummaryOut(BaseModel):
+    total: int
+    active: int
+    by_severity: dict[str, int]
+    active_by_severity: dict[str, int]
+    by_status: dict[str, int]
+
+
+class ValidationRunOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    rules_version: int
+    input_fingerprint: str
+    findings_raised: int
+    findings_created: int
+    findings_auto_closed: int
+    findings_reopened: int
+    duration_ms: int | None = None
+    summary: dict[str, Any] = {}
+    created_at: UTCDateTime
+    updated_at: UTCDateTime
+
+
+class FindingsResponse(BaseModel):
+    claim_id: str
+    claim_number: str
+    count: int
+    summary: FindingSummaryOut
+    run: ValidationRunOut | None = None
+    items: list[FindingOut] = []
+
+
+class CheckOut(BaseModel):
+    check_id: str
+    title: str
+    category: str
+    status: Literal["pass", "fail", "pending", "not_applicable"]
+    detail: str
+    rule_ids: list[str] = []
+    finding_count: int = 0
+    finding_codes: list[str] = []
+    finding_fingerprints: list[str] = []
+    severity: str | None = None
+    subjects_checked: int = 0
+
+
+class ChecksResponse(BaseModel):
+    claim_id: str
+    claim_number: str
+    rules_version: int
+    count: int
+    summary: dict[str, Any] = {}
+    run: ValidationRunOut | None = None
+    items: list[CheckOut] = []
+
+
+class FindingActionRequest(BaseModel):
+    action: Literal["review", "resolve", "acknowledge", "reopen", "exclude_duplicate"]
+    note: str | None = Field(default=None, max_length=500)
+
+    @field_validator("note")
+    @classmethod
+    def _clean_note(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        value = value.strip()
+        if any(ord(char) < 32 or ord(char) == 127 for char in value):
+            raise ValueError("must not contain control characters")
+        return value or None
+
+
+class FindingActionResult(BaseModel):
+    finding: FindingOut
+    summary: FindingSummaryOut
+
+
+class ValidationRefreshResult(BaseModel):
+    claim_id: str
+    claim_number: str
+    ran: bool
+    findings_raised: int
+    findings_created: int
+    findings_auto_closed: int
+    findings_reopened: int
+    summary: FindingSummaryOut
+    run: ValidationRunOut | None = None
 
 
 class AuditEventOut(BaseModel):

@@ -1,4 +1,4 @@
-import { EyeOff, FileImage, FileText, ScanText, TriangleAlert } from 'lucide-react'
+import { Copy, EyeOff, FileImage, FileText, ScanText, TriangleAlert } from 'lucide-react'
 import { Link } from 'react-router'
 
 import { formatBytes } from '../../lib/format'
@@ -38,7 +38,13 @@ export function DocumentInventory({ items, claimId }: { items: DocumentInventory
             const review = item.quality_signals.filter((signal) => signal.severity === 'review').length
             const attention = item.quality_signals.length - review
             return (
-              <tr key={item.document_id} data-testid="inventory-row" data-doc-type={item.doc_type ?? ''}>
+              <tr
+                key={item.document_id}
+                data-testid="inventory-row"
+                data-doc-type={item.doc_type ?? ''}
+                data-excluded={item.excluded}
+                className={item.excluded ? 'bg-slate-50/60' : undefined}
+              >
                 <td className="max-w-[16rem] px-3 py-3">
                   <div className="flex items-center gap-3">
                     <Icon name={item.filename} />
@@ -49,6 +55,12 @@ export function DocumentInventory({ items, claimId }: { items: DocumentInventory
                       <p className="text-xs text-slate-500">
                         {formatBytes(item.size_bytes)} · {item.extracted_field_count} values
                       </p>
+                      {item.excluded && (
+                        <p className="mt-0.5 inline-flex items-center gap-1 text-xs text-slate-500" title={item.exclusion_reason ?? undefined}>
+                          <Copy className="size-3" />
+                          Excluded as a duplicate — its values are not used
+                        </p>
+                      )}
                     </div>
                   </div>
                 </td>
@@ -99,7 +111,9 @@ export function DocumentInventory({ items, claimId }: { items: DocumentInventory
                 </td>
                 <td className="px-3 py-3 text-slate-600 tabular-nums">{item.extracted_field_count}</td>
                 <td className="px-3 py-3">
-                  {item.processing_status === 'processed' ? (
+                  {item.excluded ? (
+                    <Badge tone="neutral">Excluded</Badge>
+                  ) : item.processing_status === 'processed' ? (
                     <Badge tone="success" dot>
                       Processed
                     </Badge>

@@ -71,7 +71,36 @@ def canonical_config() -> dict[str, Any]:
     return data
 
 
+@lru_cache
+def rules_config() -> dict[str, Any]:
+    data = _load("rules.yaml", ("rules", "required_documents", "settings"))
+    seen_ids: set[str] = set()
+    seen_codes: set[str] = set()
+    for rule in data["rules"]:
+        for key in ("rule_id", "code", "category", "severity", "title", "explanation", "action", "evidence"):
+            if not rule.get(key):
+                raise ConfigError(f"rules.yaml: rule {rule.get('rule_id', '?')} is missing {key}")
+        if rule["rule_id"] in seen_ids:
+            raise ConfigError(f"rules.yaml: duplicate rule_id {rule['rule_id']}")
+        if rule["code"] in seen_codes:
+            raise ConfigError(f"rules.yaml: duplicate code {rule['code']}")
+        if rule["severity"] not in ("critical", "review", "warning", "info"):
+            raise ConfigError(f"rules.yaml: {rule['rule_id']} has an unknown severity {rule['severity']}")
+        if rule["evidence"] not in ("required", "optional", "none"):
+            raise ConfigError(f"rules.yaml: {rule['rule_id']} has an unknown evidence requirement")
+        banned = [word for word in ("fraud", "forged", "fake") if word in " ".join(str(v).lower() for v in rule.values())]
+        if banned:
+            raise ConfigError(f"rules.yaml: {rule['rule_id']} uses forbidden wording: {banned}")
+        seen_ids.add(rule["rule_id"])
+        seen_codes.add(rule["code"])
+    for requirement in data["required_documents"]:
+        if not requirement.get("key") or not requirement.get("doc_types"):
+            raise ConfigError("rules.yaml: every required document needs a key and doc_types")
+    return data
+
+
 def reload_configs() -> None:
     document_types_config.cache_clear()
     quality_config.cache_clear()
     canonical_config.cache_clear()
+    rules_config.cache_clear()
