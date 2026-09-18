@@ -15,6 +15,7 @@ from typing import Any
 from app.analysis.classify import type_label
 from app.analysis.normalize import PROCEDURES
 from app.config_files import checklists_config
+from app.models import SEVERITY_ORDER
 from app.validation.rules import required_documents, settings as rule_settings
 
 FOUND = "found"
@@ -334,6 +335,17 @@ def _evaluate(
     return row
 
 
+def _finding_order(finding: dict) -> tuple:
+    """The order a reader sees findings in: open first, most serious first, then rule and subject."""
+    return (
+        0 if finding.get("is_active") else 1,
+        SEVERITY_ORDER.get(finding.get("severity"), 9),
+        finding.get("rule_id") or "",
+        finding.get("subject") or "",
+        finding.get("code") or "",
+    )
+
+
 def _related_findings(
     matches: list[dict],
     doc_types: tuple[str, ...],
@@ -347,7 +359,10 @@ def _related_findings(
     for doc_type in doc_types:
         for finding in findings_by_requirement.get(doc_type, []):
             seen[finding["id"]] = finding
-    return [seen[key] for key in sorted(seen)]
+    # Ordered the way findings are ordered everywhere else: the most serious first, then by rule
+    # and subject. Sorting by the row id instead put the same two findings in a different order in
+    # every run, because the id is new each time the claim is analysed.
+    return sorted(seen.values(), key=_finding_order)
 
 
 def _summarise(items: list[dict]) -> dict:

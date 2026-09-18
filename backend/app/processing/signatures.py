@@ -54,6 +54,10 @@ class SlotCandidate:
     stamp_detected: bool
     ink_bbox: BBox | None
     curve_segments: int
+    # The area above the rule that was searched for signature ink. It is what the evidence for an
+    # unsigned slot points at: the rule on its own is a line with no height, so a reader asked to
+    # look at it would be shown nothing.
+    search_region: BBox
 
 
 def _horizontal_rules(page: pymupdf.Page) -> list[BBox]:
@@ -186,6 +190,7 @@ def detect_page_slots(page: pymupdf.Page, lines: list[TextLine], page_number: in
                 stamp_detected=stamp,
                 ink_bbox=ink_bbox,
                 curve_segments=segments,
+                search_region=(ink_region.x0, ink_region.y0, ink_region.x1, rule[3]),
             )
         )
     return candidates
@@ -241,7 +246,8 @@ def match_expected(
 
 def _slot_payload(candidate: SlotCandidate, spec: dict | None, page_sizes: dict[int, tuple[float, float]]) -> dict:
     width, height = page_sizes.get(candidate.page_number, (1.0, 1.0))
-    box = candidate.ink_bbox or candidate.rule
+    # Where the signature is, if there is one; otherwise the area that was searched for it.
+    box = candidate.ink_bbox or candidate.search_region
     return {
         "key": spec["key"] if spec else None,
         "label": (spec.get("label") if spec else None) or candidate.caption,

@@ -10,6 +10,7 @@ from __future__ import annotations
 from html import escape
 
 from app.reports.model import TITLE
+from app.text import plural
 
 STYLES = """
 :root { color-scheme: light; }
@@ -108,16 +109,6 @@ def render(report: dict) -> str:
 
     parts: list[str] = []
 
-    review_line = "Not yet reviewed by a person."
-    if review["state"] == "approved":
-        review_line = f"Approved by {review['approved_by']} on {review['approved_at']}."
-    elif review["state"] == "superseded":
-        review_line = (
-            f"{review['approved_by']} approved this claim at "
-            f"{(review.get('approved_readiness') or {}).get('score', '—')}% on {review['approved_at']}. "
-            f"It changed afterwards, so that approval no longer stands for it."
-        )
-
     parts.append(
         f"""<header class="cover">
   <h1>{_e(meta['title'])}</h1>
@@ -128,7 +119,7 @@ def render(report: dict) -> str:
     {_pill(readiness['status_label'], STATUS_CLASS.get(readiness['status'], 'muted'))}
     <span class="small">{_e(readiness['status_detail'])}</span>
   </div>
-  <p>{_e(review_line)}</p>
+  <p>{_e(review["line"])}</p>
 </header>"""
     )
 
@@ -386,7 +377,7 @@ def render(report: dict) -> str:
     parts.append(
         _section(
             "Audit trail",
-            f"{len(report['audit_trail'])} event(s), oldest first, as recorded.",
+            f"{plural(len(report['audit_trail']), 'event')}, oldest first, as recorded.",
             _rows(
                 ["When", "Event", "Actor", "Message"],
                 [

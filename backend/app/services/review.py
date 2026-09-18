@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 from app.audit import record_event
 from app.models import REVIEW_APPROVED, REVIEW_SUPERSEDED, Claim, utcnow
 from app.readiness import engine as readiness_engine
+from app.services.locks import locked
 from app.validation.engine import input_fingerprint
 
 logger = logging.getLogger("claimai.review")
@@ -33,6 +34,8 @@ def note_ready_for_review(session: Session, claim: Claim, readiness: dict) -> No
     """Record, once, that the documentation reached the point where a person can review it."""
     if claim.review_started_at is not None or readiness["status"] != readiness_engine.READY_FOR_HUMAN_REVIEW:
         return
+    if locked(session, claim).review_started_at is not None:
+        return  # another request recorded it while this one was reading
     claim.review_started_at = utcnow()
     record_event(
         session,
@@ -72,6 +75,8 @@ def refresh_approval(session: Session, claim: Claim, state: dict, readiness: dic
     """
     if claim.review_state != REVIEW_APPROVED or approval_is_current(claim, state, readiness):
         return False
+    if locked(session, claim).review_state != REVIEW_APPROVED:
+        return False  # another request superseded it while this one was reading
     approved = claim.approved_readiness or {}
     claim.review_state = REVIEW_SUPERSEDED
     claim.superseded_at = utcnow()
@@ -100,6 +105,9 @@ def refresh_approval(session: Session, claim: Claim, state: dict, readiness: dic
 
 def approve(session: Session, claim: Claim, readiness: dict, *, actor: str, note: str | None = None, state: dict | None = None) -> Claim:
     """Approve a claim. Only a person reaches this, and only for a claim that is ready."""
+    # Hold the claim before reading the state approval is refused for, so two operators pressing
+    # approve at the same moment produce one approval and one refusal, not two approvals.
+    locked(session, claim)
     if claim.review_state == REVIEW_APPROVED:
         raise ApprovalNotAllowed(
             f"{claim.claim_number} was already approved by {claim.approved_by}.", readiness=readiness

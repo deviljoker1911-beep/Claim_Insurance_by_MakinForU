@@ -23,7 +23,14 @@ from sqlalchemy.orm import Session
 
 from app import __version__
 from app.config import get_settings
-from app.models import FINDING_ACTIVE_STATUSES, AuditEvent, Claim, utcnow
+from app.models import (
+    FINDING_ACTIVE_STATUSES,
+    REVIEW_APPROVED,
+    REVIEW_SUPERSEDED,
+    AuditEvent,
+    Claim,
+    utcnow,
+)
 from app.services import canonical as canonical_service
 from app.services import reanalysis as reanalysis_service
 from app.services import review as review_service
@@ -183,7 +190,63 @@ def _questions(state: dict) -> list[dict]:
     return rows
 
 
-def _human_decisions(state: dict, findings: list[dict], questions: list[dict], claim: Claim) -> list[dict]:
+def _review_line(review: dict) -> str:
+    """What to say about the human review, in one sentence, for every format to say the same.
+
+    Each rendering used to compose this for itself, which is how two of them came to disagree
+    about a missing score. It is written once here so a reader of the PDF, the page and the
+    workbook is told the same thing: an approval that no longer stands says so in all three.
+    """
+    if review["state"] == REVIEW_APPROVED:
+        return f"Approved by {review['approved_by']} on {review['approved_at']}."
+    if review["state"] == REVIEW_SUPERSEDED:
+        score = (review.get("approved_readiness") or {}).get("score")
+        at = f" at {score}%" if score is not None else ""
+        return (
+            f"{review['approved_by']} approved this claim{at} on {review['approved_at']}. "
+            "It changed afterwards, so that approval no longer stands for it."
+        )
+    return "Not yet reviewed by a person."
+
+
+def _review(review: dict) -> dict:
+    """The human review as the report states it, sentence included."""
+    payload = {**review, "approved_readiness": review.get("approved_readiness") or {}}
+    return {**payload, "line": _review_line(payload)}
+
+
+def _approvals(events: list[AuditEvent], claim: Claim) -> list[dict]:
+    """Every approval a person gave this claim, including any the claim has since moved past.
+
+    The claim itself carries only its most recent approval, so the audit trail is what is read
+    here. An approval given to an earlier version of the claim was still given by a person, and a
+    report that dropped it would show fewer human decisions than were actually made. Each entry
+    says whether that approval still stands: a supersession recorded after an approval applies to
+    it, so an approval reads as superseded from the trail alone, never from a later assumption.
+    """
+    approvals: list[dict] = []
+    for event in events:
+        if event.event_type == "human_approval":
+            details = event.details or {}
+            approvals.append(
+                {
+                    "kind": "approval",
+                    "subject": f"Claim {claim.claim_number}",
+                    "decision": REVIEW_APPROVED,
+                    "actor": event.actor,
+                    "at": _iso(event.created_at),
+                    "note": details.get("note"),
+                    "reference": "human_approval",
+                }
+            )
+        elif event.event_type == "human_approval_superseded" and approvals:
+            approvals[-1]["decision"] = REVIEW_SUPERSEDED
+    return approvals
+
+
+def _human_decisions(
+    state: dict, findings: list[dict], questions: list[dict], claim: Claim, events: list[AuditEvent]
+) -> list[dict]:
     """Everything a person recorded, kept apart from what the system concluded."""
     decisions = []
     for finding in findings:
@@ -215,18 +278,7 @@ def _human_decisions(state: dict, findings: list[dict], questions: list[dict], c
                 "reference": question["requirement_key"],
             }
         )
-    if claim.approved_at:
-        decisions.append(
-            {
-                "kind": "approval",
-                "subject": f"Claim {claim.claim_number}",
-                "decision": claim.review_state,
-                "actor": claim.approved_by,
-                "at": _iso(claim.approved_at),
-                "note": claim.approval_note,
-                "reference": "human_approval",
-            }
-        )
+    decisions.extend(_approvals(events, claim))
     return sorted(decisions, key=lambda item: (item["at"] or "", item["kind"], item["subject"]))
 
 
@@ -402,10 +454,7 @@ def build(session: Session, claim: Claim, *, generated_at: datetime | None = Non
             "blocking_items": readiness["blocking_items"],
             "summary": readiness["summary"],
         },
-        "review": {
-            **state["review"],
-            "approved_readiness": state["review"].get("approved_readiness", {}),
-        },
+        "review": _review(state["review"]),
         "documented_facts": _documented_facts(state),
         "system_findings": finding_rows,
         "validation_checks": list(run.checks or []) if run else [],
@@ -430,7 +479,7 @@ def build(session: Session, claim: Claim, *, generated_at: datetime | None = Non
             ],
         },
         "questions": question_rows,
-        "human_decisions": _human_decisions(state, finding_rows, question_rows, claim),
+        "human_decisions": _human_decisions(state, finding_rows, question_rows, claim, events),
         "unresolved": _unresolved(state, question_rows),
         "documents": _documents(state),
         "bills": _bills(state),

@@ -11,9 +11,18 @@ from sqlalchemy.orm import Session
 from app.analysis.classify import type_label  # re-exported for the API layer
 from app.analysis.normalize import parse_date
 from app.audit import record_event
-from app.models import Claim, Document, DocumentBill, DocumentPage, ExtractedField, utcnow
+from app.models import (
+    DOCUMENT_UNFINISHED_STATUSES,
+    Claim,
+    Document,
+    DocumentBill,
+    DocumentPage,
+    ExtractedField,
+    utcnow,
+)
 from app.processing.pipeline import STAGE_LABELS, STAGES, ProcessingResult
 from app.processing.types import normalise_bbox
+from app.text import plural
 
 logger = logging.getLogger("claimai.analysis")
 
@@ -24,7 +33,7 @@ STATUS_PROCESSED = "processed"
 STATUS_FAILED = "failed"
 
 ACTIVE_STATUSES = (STATUS_QUEUED, STATUS_PROCESSING)
-UNFINISHED_STATUSES = (STATUS_PENDING, STATUS_QUEUED, STATUS_PROCESSING)
+UNFINISHED_STATUSES = DOCUMENT_UNFINISHED_STATUSES
 
 CLAIM_PROCESSING = "processing"
 CLAIM_PROCESSED = "processed"
@@ -58,7 +67,7 @@ def queue_documents(session: Session, claim: Claim, *, actor: str | None = None,
         record_event(
             session,
             "claim_analysis_started",
-            f"Queued {len(documents)} document(s) for analysis",
+            f"Queued {plural(len(documents), 'document')} for analysis",
             claim_id=claim.id,
             actor=actor,
             details={"document_count": len(documents), "documents": [d.original_filename for d in documents]},
@@ -94,7 +103,7 @@ def requeue_unfinished(session: Session) -> list[str]:
     record_event(
         session,
         "processing_requeued",
-        f"Requeued {len(documents)} document(s) that were interrupted",
+        f"Requeued {plural(len(documents), 'document')} that were interrupted",
         actor="system",
         details={"document_count": len(documents)},
     )

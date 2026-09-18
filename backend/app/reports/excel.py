@@ -254,6 +254,7 @@ def sheets_for(report: dict) -> list[Sheet]:
         ["Readiness score", readiness["score"]],
         ["Readiness status", readiness["status_label"]],
         ["Review state", review["state"]],
+        ["Human review", review["line"]],
         ["Approved by", review["approved_by"]],
         ["Approved at", review["approved_at"]],
         ["Superseded at", review["superseded_at"]],

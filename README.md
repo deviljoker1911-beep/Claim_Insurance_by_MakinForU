@@ -37,7 +37,7 @@ Document upload → OCR → Classification → Extraction → Claim structuring
 | 7 | Interactive questions, grounded assistant and incremental re-analysis | ✅ Done |
 | 8 | Readiness, dashboard and human approval | ✅ Done |
 | 9 | Final report (HTML / PDF / Excel) and audit trail | ✅ Done |
-| 10 | UI polish and demo experience | ⏳ Next |
+| 10 | Hardening: concurrency, recovery, determinism, report integrity | ✅ Done |
 
 ## Tech stack
 
@@ -269,7 +269,7 @@ what is charged. A requirement recorded as not applicable costs nothing at all.
 
 | Status | When |
 |--------|------|
-| Incomplete | A required document is missing and the request for it has not been answered — or nothing has been read yet |
+| Incomplete | A required document is missing and the request for it has not been answered — or nothing has been read yet, or documents of the claim are still being read |
 | Needs attention | A finding is open for review, or a requirement needs a person to look at it |
 | Ready for human review | Nothing is outstanding in the documentation |
 
@@ -278,6 +278,12 @@ once the documentation is ready for review, refused while anything is outstandin
 second time, and recorded with who approved it and when. Nothing else in the system — not the
 rules, the checklist, the questions or the assistant — can approve a claim. The score is
 unchanged by approval: it describes the paperwork, and the decision is recorded beside it.
+
+A claim is not ready for review while any of its documents is still being read: what has been
+read so far is part of the claim, not the claim, so the score it adds up to is not the score it
+will settle at. Two approvals arriving at the same moment produce one approval and one refusal —
+the claim is held while the decision is taken, so the audit trail counts what people actually
+did.
 
 The demo claim walks the whole path: **44% incomplete** with the operative note and the
 anaesthesia record missing, **56%** once the operative note arrives, **68% needs attention**
@@ -305,8 +311,11 @@ Every page of the PDF carries the claim number, the page number and the line tha
 makes the final decision; a demo claim carries the notice that its documents are synthetic. The
 workbook has a sheet per section — claim summary, readiness, documented facts, findings,
 checks, checklist, questions, human decisions, unresolved, documents, bills and the audit
-trail — and is written as Office Open XML directly, so the prototype gains no dependency and
-the same claim always produces the same bytes.
+trail — and is written as Office Open XML directly, so the prototype gains no dependency.
+
+Two reports of the same unchanged claim carry the same `content_sha256`: the content is a
+function of the claim and nothing else. The files themselves are not byte-identical, because each
+one records the moment it was generated — so compare the digest, not the bytes.
 
 An approval is reported as the claim holds it: a claim whose approval was superseded is
 reported as superseded, never as currently approved. Exporting a PDF or a workbook is recorded
@@ -411,6 +420,54 @@ In development, the Vite dev server forwards `/api` to `http://127.0.0.1:8010`. 
 - Every finding is attributable: a deterministic rule, or a measurement made while reading the document. Nothing in the validation engine calls a language model.
 - The claim readiness score measures documentation completeness, not the probability that the insurer will accept the claim.
 - Final submission always requires authorised human review.
+
+## What this is, and what it is not
+
+The claims above are worth only as much as the evidence behind them, so here is where each part
+stands. A buyer or a reviewer should read this before the feature list.
+
+**Deterministic, and tested as such.** Classification, extraction, the canonical claim, the 19
+rules and their 20 checks, the procedure checklist, the questions, the readiness score and the
+report contain no model and no randomness. The same stored claim produces the same conclusions
+every time, and the test suite asserts the numbers rather than that the code runs.
+
+**Measured, not deterministic.** Page quality and signature detection are measurements of a
+rendered page: resolution, sharpness, skew, ink above a signature rule. They are reported as
+measurements with the page and region they came from. A signature area reported as blank means no
+ink was found where a signature belongs — the region is shown so a person can look at it.
+
+**OCR.** Pages with no text layer go through RapidOCR locally. OCR is the least certain step in
+the pipeline: a value read below 80% confidence is listed as a source but takes no part in
+choosing the canonical value, and every value keeps the engine that read it. The demo documents
+carry a text layer, so a demo run exercises OCR on the scanned ones only.
+
+**The assistant.** By default it is not a language model: it composes answers from the claim's own
+state. Configure a provider and a key and a real model answers instead, from the same grounded
+context, behind the same guard — citations resolved against this claim, and any sentence claiming
+approval, readiness for submission, medical necessity or a diagnosis removed before serving. The
+guard is a backstop, not a proof: a model given a document that contains instructions may repeat
+its text as document content, which is what it is.
+
+**Demo data.** Everything shipped in `demo_data/` is synthetic, generated by
+`backend/app/demo_gen`, and its issues are seeded deliberately. No real patient record is used
+anywhere in this repository, and the app is not intended to be pointed at one in this state.
+
+**Prototype, and what that excludes.** There is no authentication, no authorisation, no tenancy,
+no encryption at rest, no rate limiting, no PII redaction and no retention policy. The operator is
+a name in configuration, not an account: `approved_by` records that name, so the audit trail
+attributes a decision to a configured operator rather than to an authenticated user. Nothing here
+is ready to hold real patient data, and a pilot on real claims needs those parts built first.
+
+**What has been verified, and how.** Backend tests run the real pipeline over the real synthetic
+documents — no mocks of OCR, extraction or rule evaluation. Beyond the suite: the demo path was
+run three times from a clean workspace and reached the same conclusions each time; the server was
+killed mid-analysis and the claim recovered to the same state as an uninterrupted run; eight
+approvals sent at once produced one approval; hostile filenames, oversized and malformed uploads,
+and documents containing instructions aimed at the AI were all refused or carried as data. What
+has **not** been done: load testing beyond a single operator, a security review by anyone else,
+any run against a real claim file, and any measurement of extraction accuracy against
+human-labelled ground truth — the accuracy of this pipeline on real hospital documents is
+unknown.
 
 ## License
 

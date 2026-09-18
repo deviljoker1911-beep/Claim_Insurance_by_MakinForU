@@ -257,6 +257,79 @@ def test_a_missing_document_finding_is_listed_against_the_requirement_it_is_abou
     assert _row(checklist, "post_operative_notes")["findings"] == [], "only the requirement it names"
 
 
+def test_the_findings_of_a_requirement_are_ordered_the_same_way_every_run():
+    """Two findings on one requirement must come out in the same order every time.
+
+    They used to be ordered by the finding's row id, which is a new UUID each time the claim is
+    analysed, so the same claim listed the same two findings in a different order from one run to
+    the next — in the report, the workbook and the page. The ids below sort the opposite way to the
+    order a reader should see, which is the most serious first.
+    """
+    documents = [_document("Consent.pdf", "consent")]
+    quality = {
+        "id": "zzzz-last-by-id",
+        "rule_id": "R002",
+        "code": "LOW_QUALITY_PAGE",
+        "severity": "warning",
+        "status": "open",
+        "title": "Consent.pdf page 1 is hard to read",
+        "subject": "page:consent:1",
+        "is_active": True,
+        "document_ids": ["doc-Consent.pdf"],
+    }
+    signature = {
+        "id": "aaaa-first-by-id",
+        "rule_id": "R014",
+        "code": "SIGNATURE_NOT_DETECTED",
+        "severity": "review",
+        "status": "open",
+        "title": "Patient / guardian signature is not present on Consent.pdf",
+        "subject": "signature:abc:patient_guardian",
+        "is_active": True,
+        "document_ids": ["doc-Consent.pdf"],
+    }
+    expected = ["SIGNATURE_NOT_DETECTED", "LOW_QUALITY_PAGE"]
+    for order in ([quality, signature], [signature, quality]):
+        row = _row(engine.build_checklist(_state(documents), order), "consent")
+        assert [finding["code"] for finding in row["findings"]] == expected
+
+    # Swapping the ids must not swap the order: the id is not what the order is about.
+    quality["id"], signature["id"] = signature["id"], quality["id"]
+    row = _row(engine.build_checklist(_state(documents), [quality, signature]), "consent")
+    assert [finding["code"] for finding in row["findings"]] == expected
+
+
+def test_a_finding_a_person_has_closed_is_listed_after_the_ones_still_open():
+    documents = [_document("Consent.pdf", "consent")]
+    closed = {
+        "id": "a-closed",
+        "rule_id": "R002",
+        "code": "LOW_QUALITY_PAGE",
+        "severity": "critical",
+        "status": "resolved",
+        "title": "Dealt with",
+        "subject": "page:consent:1",
+        "is_active": False,
+        "document_ids": ["doc-Consent.pdf"],
+    }
+    still_open = {
+        "id": "b-open",
+        "rule_id": "R014",
+        "code": "SIGNATURE_NOT_DETECTED",
+        "severity": "warning",
+        "status": "open",
+        "title": "Still open",
+        "subject": "signature:abc:patient_guardian",
+        "is_active": True,
+        "document_ids": ["doc-Consent.pdf"],
+    }
+    row = _row(engine.build_checklist(_state(documents), [closed, still_open]), "consent")
+    assert [finding["code"] for finding in row["findings"]] == [
+        "SIGNATURE_NOT_DETECTED",
+        "LOW_QUALITY_PAGE",
+    ], "what is still open comes first, however serious the one that is closed was"
+
+
 def test_an_implant_requirement_does_not_apply_when_no_implant_is_billed():
     row = _row(engine.build_checklist(_state([])), "implant_invoice")
     assert row["status"] == engine.NOT_APPLICABLE

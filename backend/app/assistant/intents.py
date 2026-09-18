@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 
 from app.assistant.context import ClaimContext
+from app.readiness.workflow import plural
 
 MISSING_DOCUMENTS = "missing_documents"
 OPEN_ISSUES = "open_issues"
@@ -82,7 +83,7 @@ def _missing(context: ClaimContext) -> str:
     if not context.checklist_available:
         return (
             "No procedure checklist applies to this claim yet, so there is no list of expected "
-            f"documents to compare against. {len(context.documents)} document(s) have been read so far."
+            f"documents to compare against. {plural(len(context.documents), 'document')} read so far."
         )
     if not missing and not supporting:
         return (
@@ -108,14 +109,16 @@ def _missing(context: ClaimContext) -> str:
 def _issues(context: ClaimContext) -> str:
     active = context.active_findings
     if not active:
+        if not context.findings:
+            return "No finding has been raised on this claim: the rules found nothing to report."
         return (
             "No finding is open on this claim. "
-            f"{len(context.findings)} finding(s) have been raised in total and each has been dealt with."
+            f"{plural(len(context.findings), 'finding')} raised in total, and each has been dealt with."
         )
     by_severity: dict[str, list[dict]] = {}
     for finding in active:
         by_severity.setdefault(finding["severity"], []).append(finding)
-    lines = [f"{len(active)} finding(s) are open and need a person to look at them:"]
+    lines = [f"{plural(len(active), 'finding')} open and waiting for a person to look at:"]
     for severity in ("critical", "review", "warning", "info"):
         for finding in by_severity.get(severity, []):
             lines.append(f"- {finding['title']} ({severity}) — {finding['action']} [[finding:{finding['id']}]]")
@@ -125,7 +128,7 @@ def _issues(context: ClaimContext) -> str:
 def _documentation_state(context: ClaimContext) -> str:
     if not context.checklist_available:
         return (
-            f"{len(context.documents)} document(s) have been read. No procedure checklist applies to this "
+            f"{plural(len(context.documents), 'document')} read. No procedure checklist applies to this "
             "claim yet, so the documentation cannot be measured against one."
         )
     found = [item for item in context.checklist if item["status"] == "found"]
@@ -133,7 +136,7 @@ def _documentation_state(context: ClaimContext) -> str:
     review = context.review_requirements
     lines = [
         f"Against the {context.procedure_label.lower()} checklist, {len(found)} of {len(context.checklist)} "
-        f"requirement(s) are covered by a document, {len(missing)} required one(s) are not in the claim, and "
+        f"requirements are covered by a document, {len(missing)} required ones are not in the claim, and "
         f"{len(review)} carry an open finding.",
     ]
     if missing:
@@ -165,14 +168,14 @@ def _next_steps(context: ClaimContext) -> str:
     lines = ["What is outstanding, in the order the claim raised it:"]
     lines.extend(steps[:8])
     if len(steps) > 8:
-        lines.append(f"- and {len(steps) - 8} more open item(s).")
+        lines.append(f"- and {plural(len(steps) - 8, 'more open item')}.")
     return "\n".join(lines)
 
 
 def _billing(context: ClaimContext) -> str:
     if not context.bills:
         return "No bill has been read for this claim yet."
-    lines = [f"{len(context.bills)} bill(s) have been read:"]
+    lines = [f"{plural(len(context.bills), 'bill')} read:"]
     for bill in context.bills:
         total = bill["total"] or "no total read"
         number = bill["number"] or "no number read"
@@ -193,7 +196,7 @@ def _billing(context: ClaimContext) -> str:
 def _documents(context: ClaimContext) -> str:
     usable = [document for document in context.documents if not document["excluded"]]
     excluded = [document for document in context.documents if document["excluded"]]
-    lines = [f"{len(usable)} document(s) are in this claim:"]
+    lines = [f"{plural(len(usable), 'document')} in this claim:"]
     for document in usable[:20]:
         kind = document["doc_type_label"] or "not classified"
         lines.append(f"- {document['filename']} — {kind} {_document_citation(context, document['document_id'])}")
@@ -208,17 +211,17 @@ def _documents(context: ClaimContext) -> str:
 def _summary(context: ClaimContext) -> str:
     lines = [_claim_line(context)]
     lines.append(
-        f"{len([d for d in context.documents if not d['excluded']])} document(s) have been read and "
-        f"{len(context.active_findings)} finding(s) are open."
+        f"{plural(len([d for d in context.documents if not d['excluded']]), 'document')} read and "
+        f"{plural(len(context.active_findings), 'finding')} open."
     )
     if context.checklist_available:
         missing = [item for item in context.checklist if item["status"] == "missing" and item["required"]]
         lines.append(
-            f"The {context.procedure_label.lower()} checklist has {len(missing)} required document(s) outstanding "
-            f"and {len(context.review_requirements)} requirement(s) a person should look at."
+            f"The {context.procedure_label.lower()} checklist has {plural(len(missing), 'required document')} outstanding "
+            f"and {plural(len(context.review_requirements), 'requirement')} a person should look at."
         )
     if context.open_questions:
-        lines.append(f"{len(context.open_questions)} question(s) are waiting for an answer from you.")
+        lines.append(f"{plural(len(context.open_questions), 'question')} waiting for an answer from you.")
     lines.append("Every statement here comes from the documents in the claim; a person makes the decision.")
     return "\n".join(lines)
 
@@ -228,10 +231,10 @@ def _changes(context: ClaimContext) -> str:
         return "Nothing has changed since the last analysis of this claim."
     summary = context.last_change_summary
     lines = [
-        f"The last analysis made {summary.get('changes', len(context.last_changes))} change(s): "
-        f"{summary.get('documents_added', 0)} document(s) added, "
-        f"{summary.get('questions_resolved', 0)} question(s) resolved, "
-        f"{summary.get('findings_auto_closed', 0)} finding(s) closed automatically."
+        f"The last analysis made {plural(summary.get('changes', len(context.last_changes)), 'change')}: "
+        f"{plural(summary.get('documents_added', 0), 'document')} added, "
+        f"{plural(summary.get('questions_resolved', 0), 'question')} resolved, "
+        f"{plural(summary.get('findings_auto_closed', 0), 'finding')} closed automatically."
     ]
     for change in context.last_changes[:8]:
         marker = ""

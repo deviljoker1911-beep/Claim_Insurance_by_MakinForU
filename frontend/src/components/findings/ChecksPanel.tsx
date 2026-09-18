@@ -2,15 +2,34 @@ import { CircleCheck, CircleMinus, Clock, TriangleAlert } from 'lucide-react'
 import { useState, type ComponentType } from 'react'
 
 import { cx } from '../../lib/cx'
+import { plural } from '../../lib/format'
 import type { CheckStatus, ValidationCheck } from '../../lib/types'
 import { Badge } from '../ui/Badge'
 import type { Tone } from '../ui/styles'
 
-const STATUS: Record<CheckStatus, { label: string; tone: Tone; icon: ComponentType<{ className?: string }> }> = {
-  pass: { label: 'Passed', tone: 'success', icon: CircleCheck },
-  fail: { label: 'Finding raised', tone: 'warning', icon: TriangleAlert },
-  pending: { label: 'Waiting', tone: 'info', icon: Clock },
-  not_applicable: { label: 'Not applicable', tone: 'neutral', icon: CircleMinus },
+type CheckStatusStyle = {
+  label: string
+  /** The same status with a count in front of it: "1 finding raised", "8 findings raised". */
+  counted: (total: number) => string
+  tone: Tone
+  icon: ComponentType<{ className?: string }>
+}
+
+const STATUS: Record<CheckStatus, CheckStatusStyle> = {
+  pass: { label: 'Passed', counted: (total) => `${total} passed`, tone: 'success', icon: CircleCheck },
+  fail: {
+    label: 'Finding raised',
+    counted: (total) => `${plural(total, 'finding')} raised`,
+    tone: 'warning',
+    icon: TriangleAlert,
+  },
+  pending: { label: 'Waiting', counted: (total) => `${total} waiting`, tone: 'info', icon: Clock },
+  not_applicable: {
+    label: 'Not applicable',
+    counted: (total) => `${total} not applicable`,
+    tone: 'neutral',
+    icon: CircleMinus,
+  },
 }
 
 /** The engine's own record: every check it ran, and what it concluded. */
@@ -29,7 +48,7 @@ export function ChecksPanel({ checks }: { checks: ValidationCheck[] }) {
           .filter((item) => item.total > 0)
           .map((item) => (
             <Badge key={item.status} tone={STATUS[item.status].tone}>
-              {item.total} {STATUS[item.status].label.toLowerCase()}
+              {STATUS[item.status].counted(item.total)}
             </Badge>
           ))}
         <button

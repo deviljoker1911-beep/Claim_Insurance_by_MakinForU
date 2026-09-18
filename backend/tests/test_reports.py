@@ -416,6 +416,56 @@ def test_a_superseded_approval_is_reported_as_superseded_and_not_as_approved(cli
     assert "human_approval_superseded" in {event["event_type"] for event in report["audit_trail"]}
 
 
+def test_a_re_approved_claim_reports_both_approvals_and_which_one_stands(client):
+    """An approval a person gave to an earlier version of the claim was still given.
+
+    The claim row carries only its latest approval, so a report that read the approval from there
+    showed one human decision where two were made. The report reads the audit trail instead: both
+    approvals appear, the earlier one as superseded and the current one as approved.
+    """
+    outcome = _ready_claim(client)
+    assert client.post(
+        f"/api/claims/{outcome.claim_id}/review/approve", json={"note": "First look."}
+    ).status_code == 200
+
+    upload(
+        client,
+        outcome.claim_id,
+        {"12_Third_Bill.pdf": factory.hospital_bill(number="CCH/IP/2026/08888", total="60,000.00")},
+    )
+    analyse(client, outcome.claim_id)
+    assert report_for(client, outcome.claim_id)["review"]["state"] == "superseded"
+
+    findings = client.get(f"/api/claims/{outcome.claim_id}/findings").json()["items"]
+    for item in findings:
+        if item["is_active"] and item["severity"] != "info":
+            client.post(
+                f"/api/findings/{item['id']}/action", json={"action": "acknowledge", "note": "Checked."}
+            )
+    assert client.get(f"/api/claims/{outcome.claim_id}/readiness").json()["status"] == "ready_for_human_review"
+    assert client.post(
+        f"/api/claims/{outcome.claim_id}/review/approve", json={"note": "Second look."}
+    ).status_code == 200
+
+    report = report_for(client, outcome.claim_id)
+    approvals = [item for item in report["human_decisions"] if item["kind"] == "approval"]
+    assert [item["decision"] for item in approvals] == ["superseded", "approved"]
+    assert [item["note"] for item in approvals] == ["First look.", "Second look."]
+    assert all(item["actor"] == "Demo Operator" for item in approvals)
+    assert approvals[0]["at"] < approvals[1]["at"], "the earlier approval is reported first"
+    assert len([e for e in report["audit_trail"] if e["event_type"] == "human_approval"]) == 2, (
+        "the report and the audit trail agree on how many times a person approved"
+    )
+
+    decisions = sheet_rows(excel.render(report), "Human Decisions")
+    approval_rows = [row for row in decisions if row and row[0] == "approval"]
+    assert [row[2] for row in approval_rows] == ["superseded", "approved"]
+    page = html.render(report)
+    document = pdf_text(pdf.render(report))
+    for text in (page, document):
+        assert "First look." in text and "Second look." in text
+
+
 # --- the endpoints -------------------------------------------------------------------------------------
 
 

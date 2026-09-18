@@ -435,8 +435,15 @@ QUESTION_STATUSES = (
 # A question still waiting for something from the operator.
 QUESTION_PENDING_STATUSES = (QUESTION_OPEN, QUESTION_ANSWERED)
 
+# A document still on its way through the pipeline. While a claim has one of these, what has been
+# read of the claim is not yet the claim, so nothing derived from it is final.
+DOCUMENT_UNFINISHED_STATUSES = ("pending", "queued", "processing")
+
 ANSWER_YES_HAVE_IT = "yes_have_it"
 ANSWER_NOT_AVAILABLE = "not_available"
 ANSWER_NOT_APPLICABLE = "not_applicable"
 ANSWERS = (ANSWER_YES_HAVE_IT, ANSWER_NOT_AVAILABLE, ANSWER_NOT_APPLICABLE)
 SEVERITIES = ("critical", "review", "warning", "info")
+# Most serious first. This is the order findings are listed in wherever a reader sees them, so it
+# is written once: the same two findings must never come out in a different order in two places.
+SEVERITY_ORDER = {severity: index for index, severity in enumerate(SEVERITIES)}

@@ -817,7 +817,8 @@ export interface ReadinessBreakdown {
 }
 
 export interface ReadinessBlockingItem {
-  kind: 'requirement' | 'finding'
+  /** 'document' is a document of the claim that has not been read yet. */
+  kind: 'requirement' | 'finding' | 'document'
   key: string
   label: string
   detail: string | null

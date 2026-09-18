@@ -21,7 +21,8 @@ from sqlalchemy.orm import Session
 
 from app.analysis import normalize as nz
 from app.canonical.builder import build_claim_state, json_ready
-from app.models import Claim, Document, DocumentPage
+from app.models import SEVERITY_ORDER, Claim, Document, DocumentPage
+from app.text import plural
 from app.services.canonical import content_hash
 from app.validation import duplicates as dup
 from app.validation.rules import (
@@ -40,7 +41,6 @@ FAIL = "fail"
 PENDING = "pending"
 NOT_APPLICABLE = "not_applicable"
 
-SEVERITY_ORDER = {"critical": 0, "review": 1, "warning": 2, "info": 3}
 
 
 @dataclass
@@ -266,7 +266,7 @@ def _competing_check(
     )
     competing = value.get("competing_values", [])
     if not competing:
-        outcome.detail = f"{outcome.subjects_checked} document(s) agree on {value['value']!r}."
+        outcome.detail = f"{plural(outcome.subjects_checked, 'document')} agree on {value['value']!r}."
         return outcome
     outcome.status = FAIL
     for group in competing:
@@ -275,8 +275,8 @@ def _competing_check(
             outcome.findings.append(finding)
             outcome.rule_ids.append(finding.rule.rule_id)
     outcome.detail = (
-        f"{value['source_count']} document(s) state {value['value']!r}; "
-        f"{len(competing)} other value(s) were found."
+        f"{plural(value['source_count'], 'document')} state {value['value']!r}; "
+        f"{plural(len(competing), 'other value')} found."
     )
     return outcome
 
@@ -361,7 +361,7 @@ def check_name_variants(ctx: Context) -> CheckOutcome:
                         "label_lower": label.lower(),
                         "canonical": value["value"],
                         "variants": ", ".join(
-                            f"{item['value']!r} on {item['source_count']} document(s)"
+                            f"{item['value']!r} on {plural(item['source_count'], 'document')}"
                             for item in value.get("value_variants", [])
                         ),
                     },
@@ -374,7 +374,7 @@ def check_name_variants(ctx: Context) -> CheckOutcome:
         outcome.detail = "No identity values are available yet."
     elif outcome.findings:
         outcome.status = FAIL
-        outcome.detail = f"{len(outcome.findings)} spelling variation(s) recorded."
+        outcome.detail = f"{plural(len(outcome.findings), 'spelling variation')} recorded."
     else:
         outcome.detail = "Every document prints these values the same way."
     return outcome
@@ -430,9 +430,9 @@ def check_claim_form(ctx: Context) -> CheckOutcome:
         outcome.detail = "The documents do not carry these values yet."
     elif outcome.findings:
         outcome.status = FAIL
-        outcome.detail = f"{len(outcome.findings)} claim form value(s) differ from the documents."
+        outcome.detail = f"{plural(len(outcome.findings), 'claim form value')} differing from the documents."
     else:
-        outcome.detail = f"All {compared} claim form value(s) match the documents."
+        outcome.detail = f"All {plural(compared, 'claim form value')} match the documents."
     return outcome
 
 
@@ -548,7 +548,7 @@ def check_date_sequence(ctx: Context) -> CheckOutcome:
         )
     if outcome.findings:
         outcome.status = FAIL
-        outcome.detail = f"{len(outcome.findings)} impossible date sequence(s)."
+        outcome.detail = f"{plural(len(outcome.findings), 'impossible date sequence')}."
     else:
         dates = " → ".join(
             value.isoformat() for key, value in (("a", parsed["admission"]), ("s", parsed["surgery"]), ("d", parsed["discharge"])) if value
@@ -619,7 +619,7 @@ def check_procedure(ctx: Context) -> CheckOutcome:
         outcome.status = FAIL
         outcome.detail = f"{len(procedures)} different procedures are named."
     else:
-        outcome.detail = f"{selected['source_count']} document(s) name {selected['label']!r}."
+        outcome.detail = f"{plural(selected['source_count'], 'document')} name {selected['label']!r}."
     return outcome
 
 
@@ -668,7 +668,7 @@ def check_doctors(ctx: Context) -> CheckOutcome:
         outcome.detail = "No doctor is named in the documents yet."
     elif outcome.findings:
         outcome.status = FAIL
-        outcome.detail = f"{len(outcome.findings)} difference(s) between documents."
+        outcome.detail = f"{plural(len(outcome.findings), 'difference')} between documents."
     else:
         outcome.detail = f"{' and '.join(checked)} named consistently."
     return outcome
@@ -757,9 +757,9 @@ def check_bill_numbers(ctx: Context) -> CheckOutcome:
         )
     if outcome.findings:
         outcome.status = FAIL
-        outcome.detail = f"{len(outcome.findings)} bill number(s) are used more than once."
+        outcome.detail = f"{plural(len(outcome.findings), 'bill number')} used more than once."
     else:
-        outcome.detail = f"{len(groups)} bill number(s), each used once."
+        outcome.detail = f"{plural(len(groups), 'bill number')}, each used once."
     return outcome
 
 
@@ -889,9 +889,9 @@ def check_bill_arithmetic(ctx: Context) -> CheckOutcome:
     outcome.subjects_checked = checked
     if outcome.findings:
         outcome.status = FAIL
-        outcome.detail = f"{len(outcome.findings)} amount(s) do not add up across {len(bills)} bill(s)."
+        outcome.detail = f"{plural(len(outcome.findings), 'amount')} not adding up across {plural(len(bills), 'bill')}."
     else:
-        outcome.detail = f"{checked} amount(s) across {len(bills)} bill(s) add up."
+        outcome.detail = f"{plural(checked, 'amount')} across {plural(len(bills), 'bill')} add up."
     return outcome
 
 
@@ -955,7 +955,7 @@ def check_duplicate_documents(ctx: Context) -> CheckOutcome:
             )
     if outcome.findings:
         outcome.status = FAIL
-        outcome.detail = f"{len(outcome.findings)} document(s) are byte-identical to another."
+        outcome.detail = f"{plural(len(outcome.findings), 'document')} byte-identical to another."
     else:
         outcome.detail = f"{len(active)} documents, all distinct."
     return outcome
@@ -1044,9 +1044,9 @@ def check_duplicate_pages(ctx: Context) -> CheckOutcome:
     outcome.subjects_checked = pairs
     if outcome.findings:
         outcome.status = FAIL
-        outcome.detail = f"{len(outcome.findings)} repeated page(s) across {pairs} comparison(s)."
+        outcome.detail = f"{plural(len(outcome.findings), 'repeated page')} across {plural(pairs, 'comparison')}."
     else:
-        outcome.detail = f"{pairs} page comparison(s), no repeats."
+        outcome.detail = f"{plural(pairs, 'page comparison')}, no repeats."
     return outcome
 
 
@@ -1105,9 +1105,9 @@ def check_page_quality(ctx: Context) -> CheckOutcome:
         outcome.detail = "No processed pages yet."
     elif outcome.findings:
         outcome.status = FAIL
-        outcome.detail = f"{len(outcome.findings)} page(s) may be hard to read."
+        outcome.detail = f"{plural(len(outcome.findings), 'page')} that may be hard to read."
     else:
-        outcome.detail = f"{pages_checked} page(s) are readable."
+        outcome.detail = f"{plural(pages_checked, 'page')} readable."
     return outcome
 
 
@@ -1175,9 +1175,9 @@ def check_signatures(ctx: Context) -> CheckOutcome:
         outcome.detail = "No document in this claim declares a required signature area."
     elif outcome.findings:
         outcome.status = FAIL
-        outcome.detail = f"{len(outcome.findings)} of {slots_checked} required signature area(s) are blank."
+        outcome.detail = f"{len(outcome.findings)} of {plural(slots_checked, 'required signature area')} blank."
     else:
-        outcome.detail = f"All {slots_checked} required signature area(s) are signed."
+        outcome.detail = f"All {plural(slots_checked, 'required signature area')} signed."
     return outcome
 
 
@@ -1230,9 +1230,9 @@ def check_concealed_text(ctx: Context) -> CheckOutcome:
         outcome.detail = "No processed documents yet."
     elif outcome.findings:
         outcome.status = FAIL
-        outcome.detail = f"{len(outcome.findings)} page(s) carry covered text."
+        outcome.detail = f"{plural(len(outcome.findings), 'page')} carrying covered text."
     else:
-        outcome.detail = f"No covered text in {len(ctx.active)} document(s)."
+        outcome.detail = f"No covered text in {plural(len(ctx.active), 'document')}."
     return outcome
 
 
@@ -1301,11 +1301,11 @@ def check_implant_corroboration(ctx: Context) -> CheckOutcome:
     if outcome.findings:
         outcome.status = FAIL
         outcome.detail = (
-            f"{len(outcome.findings)} billed implant line(s) are not recorded in an operative document"
-            + (f" ({len(corroborating)} operative document(s) searched)." if corroborating else " (none supplied).")
+            f"{plural(len(outcome.findings), 'billed implant line')} not recorded in an operative document"
+            + (f" ({plural(len(corroborating), 'operative document')} searched)." if corroborating else " (none supplied).")
         )
     else:
-        outcome.detail = f"{lines} billed implant line(s) are recorded in {len(corroborating)} operative document(s)."
+        outcome.detail = f"{plural(lines, 'billed implant line')} recorded in {plural(len(corroborating), 'operative document')}."
     return outcome
 
 

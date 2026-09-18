@@ -2,7 +2,7 @@ import { ArrowRight, CircleCheck, CircleHelp, FilePlus2, ListChecks, TriangleAle
 import { useState, type ComponentType } from 'react'
 
 import type { Change, ChangeKind, ReanalysisRun } from '../../lib/types'
-import { formatDateTime } from '../../lib/format'
+import { formatDateTime, plural } from '../../lib/format'
 import { Badge } from '../ui/Badge'
 import type { Tone } from '../ui/styles'
 
@@ -67,22 +67,23 @@ export function ChangeSummary({ run, history }: { run: ReanalysisRun; history: R
 }
 
 function Counts({ run }: { run: ReanalysisRun }) {
-  const counts: Array<[string, number, Tone]> = [
-    ['document added', run.summary.documents_added, 'brand'],
-    ['question resolved', run.summary.questions_resolved, 'success'],
-    ['finding closed', run.summary.findings_auto_closed, 'success'],
-    ['finding opened', run.summary.findings_opened, 'warning'],
-    ['checklist change', run.summary.checklist_changed, 'info'],
-    ['value changed', run.summary.canonical_changed, 'neutral'],
+  // Each count carries both forms: the noun is what pluralises, not the phrase, so one document
+  // added reads "1 document added" and ten read "10 documents added".
+  const counts: Array<[string, string, number, Tone]> = [
+    ['document added', 'documents added', run.summary.documents_added, 'brand'],
+    ['question resolved', 'questions resolved', run.summary.questions_resolved, 'success'],
+    ['finding closed', 'findings closed', run.summary.findings_auto_closed, 'success'],
+    ['finding opened', 'findings opened', run.summary.findings_opened, 'warning'],
+    ['checklist change', 'checklist changes', run.summary.checklist_changed, 'info'],
+    ['value changed', 'values changed', run.summary.canonical_changed, 'neutral'],
   ]
-  const shown = counts.filter(([, total]) => total > 0)
+  const shown = counts.filter(([, , total]) => total > 0)
   if (shown.length === 0) return <Badge tone="neutral">No change in the last pass</Badge>
   return (
     <>
-      {shown.map(([label, total, tone]) => (
-        <Badge key={label} tone={tone}>
-          {total} {label}
-          {total === 1 ? '' : 's'}
+      {shown.map(([singular, pluralForm, total, tone]) => (
+        <Badge key={singular} tone={tone}>
+          {plural(total, singular, pluralForm)}
         </Badge>
       ))}
     </>

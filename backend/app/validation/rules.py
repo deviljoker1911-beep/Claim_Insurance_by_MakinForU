@@ -14,6 +14,7 @@ from decimal import Decimal
 from functools import lru_cache
 
 from app.config_files import rules_config
+from app.text import Counted
 
 # Wording that must never appear in a finding, however the facts look.
 FORBIDDEN_WORDS = ("fraud", "fraudulent", "forged", "forgery", "fake")
@@ -133,16 +134,32 @@ class Finding:
         }
 
 
-class _Blanks(dict):
-    """Renders a template with every interpolated value blanked out."""
+class _Blank:
+    """Stands in for any interpolated value, whatever the wording asks of it."""
 
-    def __missing__(self, key: str) -> str:
+    def __format__(self, spec: str) -> str:
+        return "…"
+
+    def __str__(self) -> str:
         return "…"
 
 
+class _Blanks(dict):
+    """Renders a template with every interpolated value blanked out."""
+
+    def __missing__(self, key: str) -> _Blank:
+        return _Blank()
+
+
 def _render(template: str, context: dict, rule_id: str, part: str) -> str:
+    # Counts are handed to the template as Counted, so wording can say "{source_count:document}"
+    # and read correctly whether it is one document or several.
+    counted = {
+        key: Counted(value) if isinstance(value, int) and not isinstance(value, bool) else value
+        for key, value in context.items()
+    }
     try:
-        return template.format_map(context)
+        return template.format_map(counted)
     except KeyError as exc:  # pragma: no cover — caught by the rule tests
         raise KeyError(f"{rule_id} {part} needs {exc} in its context") from exc
 

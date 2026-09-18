@@ -12,7 +12,7 @@ import { useState, type ComponentType } from 'react'
 
 import { errorMessage } from '../../lib/api'
 import { cx } from '../../lib/cx'
-import { formatDateTime } from '../../lib/format'
+import { formatDateTime, plural } from '../../lib/format'
 import { useApproveClaim } from '../../lib/hooks'
 import type { ReadinessResponse, ReadinessStatus } from '../../lib/types'
 import { Badge } from '../ui/Badge'
@@ -134,13 +134,13 @@ export function ReadinessCard({ readiness, claimId }: { readiness: ReadinessResp
             {breakdown.deducted > 0 && <> − {breakdown.deducted} outstanding</>}
           </span>
           {readiness.summary.required_missing > 0 && (
-            <span>{readiness.summary.required_missing} required document(s) missing</span>
+            <span>{plural(readiness.summary.required_missing, 'required document')} missing</span>
           )}
           {readiness.summary.documented_unavailable > 0 && (
             <span>{readiness.summary.documented_unavailable} documented unavailable</span>
           )}
           {readiness.summary.counted_findings > 0 && (
-            <span>{readiness.summary.counted_findings} finding(s) counted</span>
+            <span>{plural(readiness.summary.counted_findings, 'finding')} counted</span>
           )}
           {breakdown.deductions.length > 0 && (
             <button

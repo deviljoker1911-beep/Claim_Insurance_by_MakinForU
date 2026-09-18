@@ -56,7 +56,8 @@ def question(requirement_key, status, *, reason=None):
     }
 
 
-def state(*, checklist=(), findings=(), documents=("consent",), available=True):
+def state(*, checklist=(), findings=(), documents=("consent",), available=True, unread=()):
+    """A claim state for the engine. `unread` names documents the pipeline has not finished."""
     return {
         "documents": {
             "items": [
@@ -69,6 +70,17 @@ def state(*, checklist=(), findings=(), documents=("consent",), available=True):
                     "processing_status": "processed",
                 }
                 for doc_type in documents
+            ]
+            + [
+                {
+                    "document_id": f"d-{name}",
+                    "filename": f"{name}.pdf",
+                    "doc_type": None,
+                    "doc_type_label": None,
+                    "excluded": False,
+                    "processing_status": status,
+                }
+                for name, status in unread
             ]
         },
         "findings": {"items": list(findings)},
@@ -196,6 +208,61 @@ def test_a_claim_with_nothing_read_is_not_ready_for_anything():
     assert result["score"] == 100, "nothing is outstanding because nothing is known"
     assert result["status"] == engine.INCOMPLETE
     assert result["blocking_items"][0]["detail"] == "No document of this claim has been read yet."
+
+
+# --- a claim that is still being read ------------------------------------------------------------
+
+
+@pytest.mark.parametrize("status", ["pending", "queued", "processing"])
+def test_a_claim_with_a_document_still_being_read_is_not_ready(status):
+    """Part of a claim is not the claim.
+
+    The checklist below is satisfied by what has been read, so before this was fixed the claim
+    reported 100% and ready for human review while documents were still going through the
+    pipeline — and a person could approve it. What those documents say is not known yet, so
+    there is nothing for a person to decide on.
+    """
+    result = score(
+        checklist=[requirement("consent", "found")],
+        unread=(("hospital_bill", status),),
+    )
+    assert result["status"] == engine.INCOMPLETE
+    blocking = result["blocking_items"][0]
+    assert blocking["key"] == "reading"
+    assert "1 of 2 documents" in blocking["detail"]
+    assert result["status_detail"] == blocking["detail"], "the status says what the blocking item says"
+
+
+def test_a_claim_whose_documents_are_all_read_is_not_held_back():
+    """The check is about documents in flight, not about documents that failed."""
+    result = score(checklist=[requirement("consent", "found")], unread=(("hospital_bill", "failed"),))
+    assert result["status"] == engine.READY_FOR_HUMAN_REVIEW
+    assert [item["key"] for item in result["blocking_items"]] == []
+
+
+def test_an_excluded_document_that_was_never_read_does_not_hold_the_claim_back():
+    result = score(checklist=[requirement("consent", "found")], unread=())
+    assert result["status"] == engine.READY_FOR_HUMAN_REVIEW
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "expected"),
+    [
+        ({"documents": (), "available": False}, "No document of this claim has been read yet."),
+        ({"checklist": [], "available": False}, "No checklist applies to this claim yet."),
+        ({"checklist": [requirement("operative_note", "missing")]}, "A required document is missing"),
+    ],
+)
+def test_the_status_detail_gives_the_reason_that_actually_applies(kwargs, expected):
+    """A claim that says why it is incomplete must say the right why.
+
+    The detail used to be one fixed sentence per status, so a claim with nothing read at all was
+    told "a required document is missing and the request for it has not been answered" — which
+    named a requirement that was not known to exist.
+    """
+    result = score(**kwargs)
+    assert result["status"] == engine.INCOMPLETE
+    assert expected in result["status_detail"]
 
 
 # --- counting an issue once ---------------------------------------------------------------------

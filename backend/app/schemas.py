@@ -996,7 +996,9 @@ class ReadinessBreakdownOut(BaseModel):
 
 
 class ReadinessBlockingItemOut(BaseModel):
-    kind: Literal["requirement", "finding"]
+    # "document" is a document of the claim that has not been read yet: until it has, what the
+    # claim adds up to is not known, so it is outstanding in its own right.
+    kind: Literal["requirement", "finding", "document"]
     key: str
     label: str
     detail: str | None = None
@@ -1102,6 +1104,16 @@ class DashboardResponse(BaseModel):
     truncated: bool = False
 
 
+class ReportReviewOut(ReviewSectionOut):
+    """The human review as a report states it.
+
+    `line` is the one sentence every rendering of the report uses, so the page, the PDF, the
+    workbook and this JSON cannot describe the same review differently.
+    """
+
+    line: str
+
+
 class ReportResponse(BaseModel):
     """The claim pre-submission report.
 
@@ -1115,7 +1127,7 @@ class ReportResponse(BaseModel):
     claim: dict[str, Any]
     summary: dict[str, Any]
     readiness: ReadinessSectionOut
-    review: ReviewSectionOut
+    review: ReportReviewOut
     documented_facts: list[dict[str, Any]] = []
     system_findings: list[dict[str, Any]] = []
     validation_checks: list[dict[str, Any]] = []

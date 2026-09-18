@@ -144,7 +144,7 @@ def test_unsupported_file_rejects_the_whole_batch(client, claim):
     response = upload(client, claim["id"], files)
     assert response.status_code == 422
     detail = response.json()["detail"]
-    assert detail["message"] == "1 of 3 file(s) could not be accepted. No files were stored."
+    assert detail["message"] == "1 of 3 files could not be accepted. No files were stored."
     assert detail["errors"] == [
         {"index": 2, "filename": "notes.txt", "error": "Unsupported file type. Upload PDF, PNG or JPG files."}
     ]

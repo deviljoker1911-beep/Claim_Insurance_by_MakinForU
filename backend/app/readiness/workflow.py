@@ -8,6 +8,11 @@ from __future__ import annotations
 
 from app.readiness import engine as readiness_engine
 
+
+def plural(count: int, singular: str, plural_form: str | None = None) -> str:
+    """"1 document" / "2 documents". The step text a person reads is written in plain English."""
+    return f"{count} {singular if count == 1 else (plural_form or singular + 's')}"
+
 DOCUMENTS = "documents"
 PROCESSING = "processing"
 VALIDATION = "validation"
@@ -54,14 +59,14 @@ def build(state: dict) -> list[dict]:
     if documents["count"] == 0:
         steps.append(_step(DOCUMENTS, CURRENT, "No document has been uploaded yet."))
     else:
-        steps.append(_step(DOCUMENTS, COMPLETE, f"{documents['count']} document(s) uploaded."))
+        steps.append(_step(DOCUMENTS, COMPLETE, f"{plural(documents['count'], 'document')} uploaded."))
 
     if documents["count"] == 0:
         steps.append(_step(PROCESSING, PENDING, "Waiting for documents."))
     elif in_flight:
-        steps.append(_step(PROCESSING, CURRENT, f"{in_flight} document(s) still being read."))
+        steps.append(_step(PROCESSING, CURRENT, f"{plural(in_flight, 'document')} still being read."))
     elif processed:
-        steps.append(_step(PROCESSING, COMPLETE, f"{processed} document(s) read."))
+        steps.append(_step(PROCESSING, COMPLETE, f"{plural(processed, 'document')} read."))
     else:
         steps.append(_step(PROCESSING, CURRENT, "No document has been analysed yet."))
 
@@ -70,7 +75,7 @@ def build(state: dict) -> list[dict]:
         steps.append(_step(VALIDATION, PENDING, "Waiting for a processed document."))
     elif validated:
         steps.append(
-            _step(VALIDATION, COMPLETE, f"{findings['count']} finding(s) raised, {findings['active']} still open.")
+            _step(VALIDATION, COMPLETE, f"{plural(findings['count'], 'finding')} raised, {findings['active']} still open.")
         )
     else:
         steps.append(_step(VALIDATION, CURRENT, "The rules have not finished with this claim."))
@@ -85,7 +90,7 @@ def build(state: dict) -> list[dict]:
             _step(
                 CHECKLIST,
                 COMPLETE if outstanding == 0 else CURRENT,
-                f"{outstanding} required requirement(s) outstanding."
+                f"{plural(outstanding, 'required requirement')} outstanding."
                 if outstanding
                 else "Every required document of this procedure is in the claim.",
             )
@@ -97,9 +102,9 @@ def build(state: dict) -> list[dict]:
             _step(QUESTIONS, COMPLETE if checklist.get("available") else PENDING, "Nothing is being asked for.")
         )
     elif open_questions:
-        steps.append(_step(QUESTIONS, CURRENT, f"{open_questions} question(s) waiting for an answer."))
+        steps.append(_step(QUESTIONS, CURRENT, f"{plural(open_questions, 'question')} waiting for an answer."))
     else:
-        steps.append(_step(QUESTIONS, COMPLETE, f"All {questions['count']} question(s) answered."))
+        steps.append(_step(QUESTIONS, COMPLETE, f"All {plural(questions['count'], 'question')} answered."))
 
     if readiness["status"] == readiness_engine.READY_FOR_HUMAN_REVIEW:
         steps.append(_step(READINESS, COMPLETE, f"{readiness['score']}% — {readiness['status_label'].lower()}."))

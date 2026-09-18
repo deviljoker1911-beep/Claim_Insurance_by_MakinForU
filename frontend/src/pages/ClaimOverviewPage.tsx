@@ -171,9 +171,13 @@ export function ClaimOverviewPage() {
           label="Procedure detected"
           value={checklist.data?.procedure.key ? checklist.data.procedure.label : '—'}
           hint={
-            checklist.data?.procedure.source_count
-              ? `named by ${plural(checklist.data.procedure.source_count, 'document')}`
-              : 'not named in the documents yet'
+            // Until the checklist has been read, nothing is known either way: saying the documents
+            // do not name a procedure would be stating something this page has not been told.
+            checklist.data === undefined
+              ? 'reading the documents'
+              : checklist.data.procedure.source_count
+                ? `named by ${plural(checklist.data.procedure.source_count, 'document')}`
+                : 'not named in the documents yet'
           }
         />
         <Stat

@@ -15,6 +15,8 @@ from reportlab.lib.pagesizes import A4
 from reportlab.lib.utils import simpleSplit
 from reportlab.pdfgen.canvas import Canvas
 
+from app.text import plural
+
 PAGE_W, PAGE_H = A4
 MARGIN = 42.0
 CONTENT_W = PAGE_W - 2 * MARGIN
@@ -280,16 +282,6 @@ def _draw(report: dict, total_pages: int | None) -> tuple[bytes, int]:
     if meta["demo_notice"]:
         doc.notice(meta["demo_notice"])
 
-    review_line = "Not yet reviewed by a person."
-    if review["state"] == "approved":
-        review_line = f"Approved by {review['approved_by']} on {review['approved_at']}."
-    elif review["state"] == "superseded":
-        approved_score = (review.get("approved_readiness") or {}).get("score")
-        review_line = (
-            f"{review['approved_by']} approved this claim at {approved_score}% on {review['approved_at']}. "
-            "It changed afterwards, so that approval no longer stands for it."
-        )
-
     doc.heading("Claim", "What was entered when the claim was created.")
     doc.pairs(
         [
@@ -302,7 +294,7 @@ def _draw(report: dict, total_pages: int | None) -> tuple[bytes, int]:
             ("Admission", claim["admission_date"]),
             ("Discharge", claim["discharge_date"]),
             ("Documents", f"{summary['documents']} ({summary['documents_excluded']} excluded)"),
-            ("Human review", review_line),
+            ("Human review", review["line"]),
             ("Snapshot", meta["content_sha256"][:24] + "…"),
         ]
     )
@@ -476,7 +468,7 @@ def _draw(report: dict, total_pages: int | None) -> tuple[bytes, int]:
         [0.30, 0.20, 0.07, 0.13, 0.17, 0.13],
     )
 
-    doc.heading("Audit trail", f"{len(report['audit_trail'])} event(s), oldest first, as recorded.")
+    doc.heading("Audit trail", f"{plural(len(report['audit_trail']), 'event')}, oldest first, as recorded.")
     doc.table(
         ["When", "Event", "Actor", "Message"],
         [

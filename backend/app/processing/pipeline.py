@@ -41,6 +41,7 @@ from app.processing.types import (
     DocumentContent,
     PageContent,
 )
+from app.text import plural
 
 logger = logging.getLogger("claimai.pipeline")
 
@@ -324,7 +325,7 @@ def _document_flags(content: DocumentContent, signatures: dict) -> list[dict]:
                 "code": "concealed_text",
                 "severity": severities.get("concealed_text", "review"),
                 "detail": (
-                    f"{len(concealed)} text item(s) are covered by opaque paint and are not visible when the "
+                    f"{plural(len(concealed), 'text item')} covered by opaque paint and not visible when the "
                     "document is read. The covered text is excluded from all extracted values. "
                     "Human verification required."
                 ),

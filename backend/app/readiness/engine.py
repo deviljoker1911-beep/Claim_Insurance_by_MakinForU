@@ -13,7 +13,7 @@ itself, and any rule that can only be satisfied by that document — are not cha
 from __future__ import annotations
 
 from app.config_files import readiness_config, rules_config
-from app.models import FINDING_ACTIVE_STATUSES, QUESTION_PENDING_STATUSES
+from app.models import DOCUMENT_UNFINISHED_STATUSES, FINDING_ACTIVE_STATUSES, QUESTION_PENDING_STATUSES
 from app.validation.rules import required_documents
 
 INCOMPLETE = "incomplete"
@@ -94,6 +94,12 @@ def evaluate(state: dict, questions: list[dict]) -> dict:
         for document in state["documents"]["items"]
         if document["doc_type"] and not document["excluded"] and document["processing_status"] == "processed"
     }
+    # Documents of this claim that have not been read yet. What the checklist and the findings
+    # describe is only part of the claim while any of these are outstanding.
+    included = [document for document in state["documents"]["items"] if not document["excluded"]]
+    still_reading = [
+        document for document in included if document["processing_status"] in DOCUMENT_UNFINISHED_STATUSES
+    ]
 
     deductions: list[dict] = []
     blocking: list[dict] = []
@@ -216,31 +222,52 @@ def evaluate(state: dict, questions: list[dict]) -> dict:
     score = max(floor, base - total)
 
     nothing_read = not present_types
+    status = INCOMPLETE
+    detail = config["statuses"][INCOMPLETE]
     if nothing_read or not checklist.get("available"):
         # Readiness measures the documentation against the procedure's checklist. With nothing
         # read, or no checklist to measure against, the claim is not ready for anything yet.
-        status = INCOMPLETE
+        detail = (
+            "No document of this claim has been read yet."
+            if nothing_read
+            else (checklist.get("note") or "No checklist applies to this claim yet.")
+        )
         blocking.append(
             {
                 "kind": "requirement",
                 "key": "documents" if nothing_read else "procedure",
                 "label": "Documents to read" if nothing_read else "A procedure the documents name",
-                "detail": (
-                    "No document of this claim has been read yet."
-                    if nothing_read
-                    else (checklist.get("note") or "No checklist applies to this claim yet.")
-                ),
+                "detail": detail,
                 "action": "Upload the claim documents and run the analysis."
                 if nothing_read
                 else "Upload the documents that name the procedure.",
+            }
+        )
+    elif still_reading:
+        # Some of the claim has been read and some has not. Whatever the part that was read adds
+        # up to, it is not the claim, so the claim is not ready for a person to decide on and the
+        # score is not the score it will settle at.
+        detail = (
+            f"Waiting for {len(still_reading)} of {len(included)} documents to be read. "
+            "Readiness is counted from the documents as they are read."
+        )
+        blocking.append(
+            {
+                "kind": "document",
+                "key": "reading",
+                "label": "Documents still being read",
+                "detail": detail,
+                "action": "Wait for the analysis to finish; readiness is counted again as each document is read.",
             }
         )
     elif missing_without_response:
         status = INCOMPLETE
     elif checklist_reviews or any(finding["severity"] in ("critical", "review") for finding in counted_findings):
         status = NEEDS_ATTENTION
+        detail = config["statuses"][NEEDS_ATTENTION]
     else:
         status = READY_FOR_HUMAN_REVIEW
+        detail = config["statuses"][READY_FOR_HUMAN_REVIEW]
 
     severity_counts = {severity: 0 for severity in ("critical", "review", "warning", "info")}
     for finding in counted_findings:
@@ -250,7 +277,7 @@ def evaluate(state: dict, questions: list[dict]) -> dict:
         "score": score,
         "status": status,
         "status_label": STATUS_LABELS[status],
-        "status_detail": config["statuses"][status],
+        "status_detail": detail,
         "breakdown": {
             "base_score": base,
             "deductions": deductions,

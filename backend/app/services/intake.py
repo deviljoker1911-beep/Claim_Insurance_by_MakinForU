@@ -12,6 +12,7 @@ from app.audit import record_event
 from app.config import get_settings
 from app.models import Claim, Document, new_id, utcnow
 from app.storage import InvalidFile, StagedFile, clean_filename, stage_file
+from app.text import plural
 
 UPLOAD_SOURCES = ("upload", "demo_pack")
 
@@ -68,7 +69,7 @@ def ingest_files(
                 errors.append(FileError(index=index, filename=clean_filename(incoming.filename), error=str(exc)))
         if errors:
             raise IntakeError(
-                f"{len(errors)} of {len(files)} file(s) could not be accepted. No files were stored.", errors
+                f"{len(errors)} of {plural(len(files), 'file')} could not be accepted. No files were stored.", errors
             )
 
         uploaded_at = utcnow()

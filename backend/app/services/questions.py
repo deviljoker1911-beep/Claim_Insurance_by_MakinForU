@@ -32,6 +32,7 @@ from app.models import (
     utcnow,
 )
 from app.questions import engine as question_engine
+from app.services.locks import locked
 
 logger = logging.getLogger("claimai.questions")
 
@@ -192,6 +193,9 @@ def answer(
     "Yes, I have it" is not a resolution: the question stays open for the document until one
     of the expected type is in the claim.
     """
+    # Hold the question before reading the status that decides whether it still takes an answer,
+    # so a double-click records one answer and refuses the second rather than recording both.
+    locked(session, question)
     if question.status not in QUESTION_PENDING_STATUSES:
         raise AnswerNotAllowed(f"This question is {question.status.replace('_', ' ')} and takes no further answer.")
     reason = (reason or "").strip()

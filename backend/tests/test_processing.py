@@ -256,6 +256,41 @@ def test_blank_consent_signature_area_is_detected(demo_results):
     assert "Patient / guardian" in codes[0]["detail"]
 
 
+def test_a_signature_slot_points_at_an_area_a_reader_can_be_shown(demo_results):
+    """Evidence a person cannot see is not evidence.
+
+    An unsigned slot used to be reported at the signature rule itself, which is a line: the box
+    had no height, so highlighting it showed nothing at all. An unsigned slot points at the area
+    that was searched for the signature — where the system looked and found nothing.
+    """
+    checked = 0
+    for filename, result in demo_results.items():
+        for slot in result.signatures["slots"]:
+            box = slot["bbox"]
+            if box is None:
+                continue
+            checked += 1
+            assert len(box) == 4, (filename, slot["caption"])
+            assert all(0.0 <= value <= 1.0 for value in box), (filename, slot["caption"], box)
+            assert box[2] > box[0], f"{filename} {slot['caption']}: the box has no width: {box}"
+            assert box[3] > box[1], f"{filename} {slot['caption']}: the box has no height: {box}"
+    assert checked > 0, "the demo documents are expected to have signature areas"
+
+
+def test_the_area_searched_for_an_unsigned_signature_is_a_band_not_a_page(demo_results):
+    """The area reported for a blank slot is the strip a signature would occupy.
+
+    It has to be big enough for a reader to see and small enough to mean something: pointing at
+    most of the page would tell a reviewer nothing about where the signature should have been.
+    """
+    consent = demo_results["16_Consent_Form.pdf"].signatures["slots"]
+    blank = next(slot for slot in consent if slot["key"] == "patient_guardian")
+    assert blank["signed"] is False
+    left, top, right, bottom = blank["bbox"]
+    assert 0.0 < bottom - top < 0.12, f"a signature area is a band: {blank['bbox']}"
+    assert 0.0 < right - left < 0.6, f"a signature area is not the width of the page: {blank['bbox']}"
+
+
 def test_signed_documents_have_no_blank_signature_signal(demo_results):
     for filename in ("02_Admission_Form.pdf", "scan_0042.pdf", "Anaesthesia_Record.pdf", "06_Discharge_Summary.pdf"):
         codes = {flag["code"] for flag in demo_results[filename].quality_flags}

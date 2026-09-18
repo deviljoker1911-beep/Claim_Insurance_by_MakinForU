@@ -25,14 +25,17 @@ from app.models import (
     FINDING_REOPENED,
     FINDING_RESOLVED,
     SEVERITIES,
+    SEVERITY_ORDER,
     Claim,
     Document,
     Finding,
     ValidationRun,
     utcnow,
 )
+from app.services.locks import locked
 from app.validation import engine
 from app.validation.rules import rules_version
+from app.text import plural
 
 logger = logging.getLogger("claimai.validation")
 
@@ -87,13 +90,12 @@ def findings_for(
     if severity:
         query = query.where(Finding.severity == severity)
     findings = list(session.scalars(query).all())
-    order = {severity: index for index, severity in enumerate(SEVERITIES)}
     active_first = {True: 0, False: 1}
     return sorted(
         findings,
         key=lambda finding: (
             active_first[finding.status in FINDING_ACTIVE_STATUSES],
-            order.get(finding.severity, 9),
+            SEVERITY_ORDER.get(finding.severity, 9),
             finding.rule_id,
             finding.subject,
         ),
@@ -219,7 +221,7 @@ def refresh(session: Session, claim: Claim, *, actor: str | None = None, state: 
         record_event(
             session,
             "validation_completed",
-            f"Validation raised {len(result.findings)} finding(s)",
+            f"Validation raised {plural(len(result.findings), 'finding')}",
             claim_id=claim.id,
             actor=actor or "system",
             details={
@@ -256,6 +258,9 @@ def apply_action(session: Session, finding: Finding, action: str, *, actor: str,
     """Move one finding through its lifecycle."""
     if action not in ACTIONS:
         raise ActionNotAllowed(f"Unknown action {action!r}. Use one of: {', '.join(ACTIONS)}.")
+    # Hold the finding before reading the status its lifecycle is checked against, so the same
+    # action arriving twice is applied once.
+    locked(session, finding)
     if finding.status not in ALLOWED_FROM[action]:
         raise ActionNotAllowed(
             f"A finding that is {finding.status.replace('_', ' ')} cannot be {_describe(action)}."

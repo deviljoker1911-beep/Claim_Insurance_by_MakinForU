@@ -64,9 +64,9 @@ rules:
     attribution: source
     title: "Potential alteration on {document_name} page {page}"
     explanation: >-
-      {count} value(s) on this page are covered by opaque paint, so a reader never sees them
-      while they remain in the file: {covered}. The visible value is the one used everywhere in
-      this claim. Human verification required.
+      Opaque paint covers {count:value} on this page, hidden from a reader while it remains in
+      the file: {covered}. The visible value is the one used everywhere in this claim. Human
+      verification required.
     action: "Open the page, compare the covered and visible values, and confirm the correct amount with the issuer."
     evidence: required
 
@@ -75,11 +75,11 @@ rules:
     category: identity
     severity: review
     attribution: rule
-    title: "Patient name differs on {source_count} document(s)"
+    title: "Patient name differs on {source_count:document}"
     explanation: >-
-      The claim documents state "{canonical}" ({canonical_sources} document(s)), while
-      {documents} state "{other}". Names are compared without honorifics, case or punctuation,
-      so this is a different name rather than a different spelling.
+      "{canonical}" is stated by {canonical_sources:document}; "{other}" appears on
+      {documents}. Names are compared without honorifics, case or punctuation, so this is a
+      different name rather than a different spelling.
     action: "Confirm the patient's name with the hospital and have the document corrected or explained."
     evidence: required
 
@@ -88,9 +88,9 @@ rules:
     category: identity
     severity: review
     attribution: rule
-    title: "UHID differs on {source_count} document(s)"
+    title: "UHID differs on {source_count:document}"
     explanation: >-
-      The claim documents state UHID "{canonical}", while {documents} state "{other}".
+      The claim documents state UHID "{canonical}"; "{other}" appears on {documents}.
       Identifiers are compared without punctuation or case.
     action: "Confirm the hospital identification number and have the document corrected."
     evidence: required
@@ -103,7 +103,7 @@ rules:
     title: "Claim form {field_label} does not match the documents"
     explanation: >-
       The claim form was created with {field_label} "{form_value}", while the documents state
-      "{document_value}" ({source_count} document(s)).
+      "{document_value}" ({source_count:document}).
     action: "Correct the claim form, or confirm which value belongs on the submission."
     evidence: required
 
@@ -114,9 +114,9 @@ rules:
     attribution: rule
     title: "Admission date differs between documents"
     explanation: >-
-      The documents state {canonical} ({canonical_sources} document(s)), while {documents}
-      state {other}. Dates are compared as calendar dates, so different formats of the same
-      day are not reported.
+      The documents state {canonical} ({canonical_sources:document}); {other} appears on
+      {documents}. Dates are compared as calendar dates, so different formats of the same day
+      are not reported.
     action: "Confirm the admission date and have the document corrected."
     evidence: required
 
@@ -127,8 +127,8 @@ rules:
     attribution: rule
     title: "Discharge date differs between documents"
     explanation: >-
-      The documents state {canonical} ({canonical_sources} document(s)), while {documents}
-      state {other}. Dates are compared as calendar dates.
+      The documents state {canonical} ({canonical_sources:document}); {other} appears on
+      {documents}. Dates are compared as calendar dates.
     action: "Confirm the discharge date and have the document corrected."
     evidence: required
 
@@ -149,8 +149,8 @@ rules:
     attribution: rule
     title: "Diagnosis differs between documents"
     explanation: >-
-      The documents state "{canonical}" ({canonical_sources} document(s)), while {documents}
-      state "{other}".
+      The documents state "{canonical}" ({canonical_sources:document}); "{other}" appears on
+      {documents}.
     action: "Have the treating team confirm the diagnosis that belongs on the claim."
     evidence: required
 
@@ -161,8 +161,8 @@ rules:
     attribution: rule
     title: "More than one procedure is named across the documents"
     explanation: >-
-      The documents name "{canonical}" ({canonical_sources} document(s)) and "{other}"
-      ({other_sources} document(s)). Short forms of the same operation are grouped together, so
+      The documents name "{canonical}" ({canonical_sources:document}) and "{other}"
+      ({other_sources:document}). Short forms of the same operation are grouped together, so
       these are different procedures.
     action: "Confirm which procedure was performed and which documents belong to this claim."
     evidence: required
@@ -174,8 +174,8 @@ rules:
     attribution: rule
     title: "{role_label} differs between documents"
     explanation: >-
-      The documents state {canonical} ({canonical_sources} document(s)), while {documents}
-      state {other}. Names are compared without honorifics or qualifications.
+      The documents state {canonical} ({canonical_sources:document}); {other} appears on
+      {documents}. Names are compared without honorifics or qualifications.
     action: "Confirm who {role_lower} for this admission."
     evidence: required
 

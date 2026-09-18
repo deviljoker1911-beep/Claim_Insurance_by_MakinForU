@@ -24,6 +24,7 @@ from app.services import canonical as canonical_service
 from app.services import questions as question_service
 from app.services import review as review_service
 from app.services import validation as validation_service
+from app.text import plural
 
 logger = logging.getLogger("claimai.reanalysis")
 
@@ -140,7 +141,7 @@ def _run_locked(
     record_event(
         session,
         "reanalysis_completed",
-        f"Re-analysis finished with {counts['changes']} change(s)",
+        f"Re-analysis finished with {plural(counts['changes'], 'change')}",
         claim_id=claim.id,
         actor=actor,
         details={"sequence": sequence, "trigger": trigger, **counts},
