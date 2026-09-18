@@ -992,6 +992,9 @@ class ReadinessBreakdownOut(BaseModel):
     deductions: list[ReadinessDeductionOut] = []
     deducted: int
     final_score: int
+    # False while nothing of the claim has been read: there is no documentation to count, so the
+    # score is the floor because nothing is known rather than because everything is outstanding.
+    counted: bool = True
     status: str
 
 

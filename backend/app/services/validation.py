@@ -136,6 +136,13 @@ def refresh(session: Session, claim: Claim, *, actor: str | None = None, state: 
     result = engine.run(session, claim, state)
     now = utcnow()
 
+    # Hold the claim for the rest of the run. A finding is identified by its fingerprint, and two
+    # runs of the same claim at the same moment both found no row for a fingerprint and both
+    # inserted one, which the unique constraint refused — so reading a claim's findings while its
+    # documents were being read could fail outright. The second run now waits, and then sees the
+    # findings the first one wrote and updates them instead of adding a second copy.
+    locked(session, claim)
+
     stored = stored_run(session, claim.id)
     # Replaying the same documents must leave the findings exactly as they are: only a run over
     # changed documents (or changed rules) counts as another occurrence.

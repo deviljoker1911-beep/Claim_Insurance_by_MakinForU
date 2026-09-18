@@ -14,7 +14,10 @@ before either writes; the stale copy is recreated here directly so the guard is 
 the timing.
 """
 
+import concurrent.futures
+
 import pytest
+from sqlalchemy import func, select
 
 from app.db import SessionLocal
 from app.models import Claim, Finding, Question
@@ -254,3 +257,62 @@ def test_the_dashboard_and_the_report_agree_that_a_partly_read_claim_is_not_read
     assert readiness["score"] == report["readiness"]["score"] == row["readiness_score"]
     assert report["review"]["state"] == "draft"
     assert report["review"]["line"] == "Not yet reviewed by a person."
+
+
+# --- validating one claim from two places at once ---------------------------------------------
+
+
+def test_two_validation_runs_at_once_leave_one_finding_per_fingerprint(client):
+    """Reading a claim's findings while its documents are being read must not fail.
+
+    A finding is identified by its fingerprint, and validation runs from several places: the
+    worker as each document is read, the read endpoints that bring a claim up to date, and the
+    validate endpoint. Two runs that overlapped both found no row for a fingerprint and both
+    inserted one, which the unique constraint refused — so a person refreshing the claim page
+    during analysis could be shown an error. A run now holds the claim, so the second sees what
+    the first wrote.
+
+    The failure needs two runs uncommitted at the same moment, so this test uses threads with a
+    session each. On PostgreSQL it reproduces the original failure; on SQLite, whose writers
+    serialise anyway, it holds the invariant that matters either way.
+    """
+    outcome = scenario(client, factory.checklist_complete_claim())
+    claim_id = outcome.claim_id
+
+    def run_validation() -> None:
+        with SessionLocal() as session:
+            claim = session.get(Claim, claim_id)
+            validation_service.refresh(session, claim, actor="Concurrent Operator")
+
+    with concurrent.futures.ThreadPoolExecutor(4) as pool:
+        failures = [future.exception() for future in [pool.submit(run_validation) for _ in range(4)]]
+    assert not any(failures), f"a validation run failed: {[f for f in failures if f]}"
+
+    with SessionLocal() as session:
+        duplicated = session.execute(
+            select(Finding.fingerprint, func.count(Finding.id))
+            .where(Finding.claim_id == claim_id)
+            .group_by(Finding.fingerprint)
+            .having(func.count(Finding.id) > 1)
+        ).all()
+    assert duplicated == [], f"the same finding was stored more than once: {duplicated}"
+
+    # The endpoints that bring a claim up to date still answer, and agree with each other.
+    for path in ("findings", "checks", "readiness", "report"):
+        response = client.get(f"/api/claims/{claim_id}/{path}")
+        assert response.status_code == 200, f"{path}: {response.text}"
+
+
+def test_validating_the_same_claim_again_changes_nothing(client):
+    """Four runs over unchanged documents leave the findings exactly as one run did."""
+    outcome = scenario(client, factory.checklist_complete_claim())
+    first = client.get(f"/api/claims/{outcome.claim_id}/findings").json()["items"]
+
+    for _ in range(4):
+        assert client.post(f"/api/claims/{outcome.claim_id}/validate").status_code == 200
+
+    again = client.get(f"/api/claims/{outcome.claim_id}/findings").json()["items"]
+    assert [(item["code"], item["subject"], item["status"]) for item in again] == [
+        (item["code"], item["subject"], item["status"]) for item in first
+    ]
+    assert len({item["fingerprint"] for item in again}) == len(again), "one row per fingerprint"

@@ -100,6 +100,9 @@ def evaluate(state: dict, questions: list[dict]) -> dict:
     still_reading = [
         document for document in included if document["processing_status"] in DOCUMENT_UNFINISHED_STATUSES
     ]
+    # Nothing of this claim has been read: no document processed, or none the classifier could
+    # name. There is no documentation to measure, so there is nothing to count.
+    nothing_read = not present_types
 
     deductions: list[dict] = []
     blocking: list[dict] = []
@@ -219,9 +222,13 @@ def evaluate(state: dict, questions: list[dict]) -> dict:
             )
 
     total = sum(deduction["amount"] for deduction in deductions)
-    score = max(floor, base - total)
+    # A claim nobody has read yet is not measured: counting outstanding items against a claim that
+    # has told the system nothing would leave it holding a score a reader can take for
+    # completeness, whatever the status beside it says. It scores the floor until a document of it
+    # has been read, and the breakdown says the count has not happened rather than implying it did.
+    counted = not nothing_read
+    score = max(floor, base - total) if counted else floor
 
-    nothing_read = not present_types
     status = INCOMPLETE
     detail = config["statuses"][INCOMPLETE]
     if nothing_read or not checklist.get("available"):
@@ -284,6 +291,9 @@ def evaluate(state: dict, questions: list[dict]) -> dict:
             "deducted": total,
             "final_score": score,
             "status": status,
+            # False while there is no documentation to count: the score is the floor because
+            # nothing is known, not because everything is outstanding.
+            "counted": counted,
         },
         "blocking_items": blocking,
         "summary": {

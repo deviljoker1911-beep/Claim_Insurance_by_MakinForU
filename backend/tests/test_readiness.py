@@ -204,10 +204,40 @@ def test_a_claim_with_no_checklist_is_scored_on_its_findings_alone():
 
 
 def test_a_claim_with_nothing_read_is_not_ready_for_anything():
+    """A claim nobody has read scores nothing, and says why.
+
+    It used to score 100 on the reasoning that nothing was outstanding because nothing was known.
+    The status said incomplete, but the number is what a screenshot, a dashboard tile or an API
+    integrator carries away, and 100 reads as complete however it is labelled. There is no
+    documentation to count, so the score is the floor and the breakdown says the count has not
+    happened rather than implying a full one.
+    """
     result = score(checklist=[], documents=(), available=False)
-    assert result["score"] == 100, "nothing is outstanding because nothing is known"
+    assert result["score"] == 0, "nothing has been read, so nothing is established"
+    assert result["breakdown"]["counted"] is False
+    assert result["breakdown"]["deducted"] == 0, "the score is not the result of deductions"
+    assert result["breakdown"]["final_score"] == 0
     assert result["status"] == engine.INCOMPLETE
     assert result["blocking_items"][0]["detail"] == "No document of this claim has been read yet."
+
+
+def test_a_claim_that_has_been_read_is_counted_as_before():
+    """The deduction model is untouched for any claim with a document read.
+
+    The floor only applies where there is nothing to count. A claim whose documents have been read
+    is scored exactly as it was, whatever that score comes to.
+    """
+    clean = score(checklist=[requirement("consent", "found")])
+    assert (clean["score"], clean["breakdown"]["counted"]) == (100, True)
+
+    missing = score(checklist=[requirement("operative_note", "missing")])
+    assert (missing["score"], missing["breakdown"]["counted"]) == (88, True)
+    assert missing["breakdown"]["deducted"] == 12
+
+    # Read, but nothing the classifier could name: there is still nothing to measure.
+    unnamed = score(checklist=[], documents=(), available=False, unread=(("scan", "processed"),))
+    assert unnamed["score"] == 0
+    assert unnamed["breakdown"]["counted"] is False
 
 
 # --- a claim that is still being read ------------------------------------------------------------
@@ -463,6 +493,104 @@ def test_a_claim_with_no_documents_is_on_its_first_step(client, workspace):
     assert by_key["documents"]["status"] == "current"
     assert by_key["processing"]["status"] == "pending"
     assert by_key["human_review"]["status"] == "pending"
+
+
+# --- a claim nobody has read yet -----------------------------------------------------------------
+
+
+def test_a_claim_with_nothing_read_shows_no_readiness_on_any_surface(client, workspace):
+    """A claim that has told the system nothing must not present a score that reads as complete.
+
+    The status said incomplete and the blocking item said why, but the number is what travels: a
+    screenshot, a dashboard tile, a report summary or an API integrator carries 100 away and reads
+    it as finished. Every surface reports the same thing for a claim with nothing read — no
+    readiness, incomplete, not approvable, and the reason in plain words.
+    """
+    claim = client.post("/api/claims", json=DEMO_CLAIM).json()
+    claim_id = claim["id"]
+
+    readiness = client.get(f"/api/claims/{claim_id}/readiness").json()
+    assert readiness["score"] == 0, "nothing has been read, so nothing is established"
+    assert readiness["score"] != 100
+    assert readiness["status"] == "incomplete"
+    assert readiness["status_label"] == "Incomplete"
+    assert readiness["breakdown"]["counted"] is False, "the count has not happened"
+    assert readiness["breakdown"]["deducted"] == 0, "the score is not the result of deductions"
+    assert readiness["breakdown"]["final_score"] == 0
+
+    # The reason is explicit, not left to the reader to infer from a number.
+    blocking = readiness["blocking_items"]
+    assert [item["key"] for item in blocking] == ["documents"]
+    assert blocking[0]["detail"] == "No document of this claim has been read yet."
+    assert blocking[0]["action"] == "Upload the claim documents and run the analysis."
+
+    # No person is offered the decision, and the endpoint refuses it if one is attempted anyway.
+    assert readiness["review"]["can_approve"] is False
+    refused = client.post(f"/api/claims/{claim_id}/review/approve", json={"note": "Looks fine."})
+    assert refused.status_code == 422, refused.text
+    assert "incomplete" in refused.json()["detail"].lower()
+    audit = client.get(f"/api/claims/{claim_id}/audit").json()
+    assert [event for event in audit if event["event_type"] == "human_approval"] == []
+
+    # The canonical claim, the dashboard and the report say the same as the readiness endpoint.
+    state = client.get(f"/api/claims/{claim_id}/state").json()
+    report = client.get(f"/api/claims/{claim_id}/report").json()
+    row = next(item for item in client.get("/api/dashboard").json()["claims"] if item["claim_id"] == claim_id)
+    assert state["readiness"]["score"] == report["readiness"]["score"] == row["readiness_score"] == 0
+    assert (
+        state["readiness"]["status"] == report["readiness"]["status"] == row["readiness_status"] == "incomplete"
+    )
+    assert report["summary"]["readiness_score"] == 0
+    assert report["review"]["state"] == "draft"
+    assert report["review"]["line"] == "Not yet reviewed by a person."
+
+    # The workspace average counts it as the nothing it is.
+    assert client.get("/api/dashboard").json()["totals"]["average_readiness"] == 0
+
+    # Reading it, in every way, leaves it exactly as it was.
+    before = len(audit)
+    for _ in range(3):
+        for path in ("readiness", "state", "findings", "checklist", "questions", "report"):
+            assert client.get(f"/api/claims/{claim_id}/{path}").status_code == 200
+        assert client.get("/api/dashboard").status_code == 200
+    after = client.get(f"/api/claims/{claim_id}/readiness").json()
+    assert (after["score"], after["status"], after["breakdown"]["counted"]) == (0, "incomplete", False)
+    assert after["review"]["state"] == "draft"
+    assert len(client.get(f"/api/claims/{claim_id}/audit").json()) == before, "a read records nothing"
+
+
+def test_a_claim_whose_documents_all_failed_to_be_read_shows_no_readiness(client, workspace):
+    """Documents that could not be read leave the claim knowing nothing about itself."""
+    claim = client.post("/api/claims", json=DEMO_CLAIM).json()
+    response = upload(client, claim["id"], {"not_a_document.pdf": b"%PDF-1.7\nnot really a pdf"})
+    assert response.status_code == 422, "the file is refused at intake, so nothing was read"
+
+    readiness = client.get(f"/api/claims/{claim['id']}/readiness").json()
+    assert (readiness["score"], readiness["status"]) == (0, "incomplete")
+    assert readiness["breakdown"]["counted"] is False
+    assert readiness["review"]["can_approve"] is False
+
+
+def test_the_zero_information_claim_reads_the_same_in_every_report_format(client, workspace):
+    """No rendering of the report may show a readiness a claim with nothing read does not have."""
+    from app.reports import excel, html, model, pdf
+    from tests.test_reports import pdf_text, report_for, sheet_rows
+
+    claim = client.post("/api/claims", json=DEMO_CLAIM).json()
+    report = report_for(client, claim["id"])
+    assert report["readiness"]["score"] == 0
+
+    page = html.render(report)
+    document = pdf_text(pdf.render(report))
+    summary = {row[0]: row[1] if len(row) > 1 else "" for row in sheet_rows(excel.render(report), "Claim Summary")}
+    # The cover carries the score; "100%" also appears in the page's own stylesheet, so the
+    # score element is what is checked rather than the text of the whole file.
+    assert "<b>0%</b>" in page
+    assert "<b>100%</b>" not in page, "no rendering shows a readiness this claim does not have"
+    assert "0%" in document and "100%" not in document
+    assert summary["Readiness score"] == "0"
+    assert summary["Readiness status"] == "Incomplete"
+    assert model.build is not None  # the payload above came from the one assembly
 
 
 # --- human review ---------------------------------------------------------------------------------------

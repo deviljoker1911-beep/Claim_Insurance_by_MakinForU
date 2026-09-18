@@ -813,6 +813,8 @@ export interface ReadinessBreakdown {
   deductions: ReadinessDeduction[]
   deducted: number
   final_score: number
+  /** False while nothing of the claim has been read: there is no documentation to count yet. */
+  counted: boolean
   status: ReadinessStatus
 }
 

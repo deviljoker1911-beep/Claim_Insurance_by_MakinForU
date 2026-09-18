@@ -130,8 +130,16 @@ export function ReadinessCard({ readiness, claimId }: { readiness: ReadinessResp
         </div>
         <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500">
           <span>
-            {breakdown.base_score} start
-            {breakdown.deducted > 0 && <> − {breakdown.deducted} outstanding</>}
+            {breakdown.counted ? (
+              <>
+                {breakdown.base_score} start
+                {breakdown.deducted > 0 && <> − {breakdown.deducted} outstanding</>}
+              </>
+            ) : (
+              // Showing "100 start" beside a claim that was never read would imply a count that
+              // has not happened.
+              'Not counted yet — no document of this claim has been read'
+            )}
           </span>
           {readiness.summary.required_missing > 0 && (
             <span>{plural(readiness.summary.required_missing, 'required document')} missing</span>
