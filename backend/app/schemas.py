@@ -686,6 +686,95 @@ class SnapshotOut(BaseModel):
     processed_count: int
 
 
+# --- Procedure checklist (phase 6) --------------------------------------------------------
+
+
+class ChecklistEvidenceOut(BaseModel):
+    """The document that satisfies a requirement. A document has no page to cite of its own."""
+
+    document_id: str
+    document_name: str
+    doc_type: str | None = None
+    doc_type_label: str | None = None
+    classification_confidence: float | None = None
+    classification_method: str | None = None
+    page_count: int | None = None
+    page: int | None = None
+    detail: str
+
+
+class ChecklistFindingOut(BaseModel):
+    """A finding the rules raised about this requirement; the full record is on /findings."""
+
+    id: str
+    rule_id: str
+    code: str
+    severity: str
+    status: str
+    title: str
+    subject: str
+    is_active: bool
+    document_ids: list[str] = []
+
+
+class ChecklistItemOut(BaseModel):
+    key: str
+    label: str
+    description: str
+    doc_types: list[str] = []
+    doc_type_labels: list[str] = []
+    required: bool
+    severity: Literal["critical", "review", "warning", "info"]
+    applies_when: str
+    resolution: str
+    status: Literal["found", "missing", "review_required", "not_applicable"]
+    detail: str
+    evidence: list[ChecklistEvidenceOut] = []
+    findings: list[ChecklistFindingOut] = []
+
+
+class ChecklistProcedureSourceOut(BaseModel):
+    document_id: str
+    document_name: str
+    value: str | None = None
+    page: int | None = None
+
+
+class ChecklistProcedureNamedOut(BaseModel):
+    key: str | None = None
+    label: str
+    source_count: int = 0
+
+
+class ChecklistProcedureOut(BaseModel):
+    """The procedure the checklist was built for, and what named it."""
+
+    key: str | None = None
+    label: str
+    has_checklist: bool
+    source_count: int = 0
+    documents: list[ChecklistProcedureSourceOut] = []
+    written_as: list[str] = []
+    also_named: list[ChecklistProcedureNamedOut] = []
+
+
+class ChecklistSectionOut(BaseModel):
+    available: bool
+    checklist_version: int
+    procedure: ChecklistProcedureOut
+    provisional: bool = False
+    count: int
+    summary: dict[str, Any] = {}
+    items: list[ChecklistItemOut] = []
+    configured_procedures: list[ChecklistProcedureNamedOut] = []
+    note: str | None = None
+
+
+class ChecklistResponse(ChecklistSectionOut):
+    claim_id: str
+    claim_number: str
+
+
 class ClaimStateOut(BaseModel):
     """The canonical claim: one structured claim assembled from the documents."""
 
@@ -699,7 +788,7 @@ class ClaimStateOut(BaseModel):
     investigations: InvestigationsSectionOut
     documents: DocumentsSectionOut
     bills: BillsSectionOut
-    checklist: PendingSectionOut
+    checklist: ChecklistSectionOut
     findings: CanonicalFindingsSectionOut
     questions: PendingSectionOut
     resolutions: PendingSectionOut

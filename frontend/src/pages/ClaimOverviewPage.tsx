@@ -1,6 +1,5 @@
 import {
   ArrowLeft,
-  ClipboardList,
   FileStack,
   FlaskConical,
   Receipt,
@@ -13,6 +12,7 @@ import { useState } from 'react'
 import { useParams } from 'react-router'
 
 import { BillsPanel } from '../components/canonical/BillsPanel'
+import { ChecklistPanel, ProcedureSummary } from '../components/checklist/ChecklistPanel'
 import { ChecksPanel } from '../components/findings/ChecksPanel'
 import { FindingsPanel } from '../components/findings/FindingsPanel'
 import { CanonicalFieldList, CanonicalFieldRow, SourceChip } from '../components/canonical/CanonicalField'
@@ -28,7 +28,7 @@ import { PageHeader } from '../components/ui/PageHeader'
 import { Skeleton } from '../components/ui/Skeleton'
 import { ApiError, errorMessage } from '../lib/api'
 import { formatDate, formatDateTime, plural } from '../lib/format'
-import { useChecks, useClaimState, useFindingAction, useFindings } from '../lib/hooks'
+import { useChecklist, useChecks, useClaimState, useFindingAction, useFindings } from '../lib/hooks'
 import type { CanonicalValue, ClaimState, Finding, FindingAction, ProcedureItem } from '../lib/types'
 
 export function ClaimOverviewPage() {
@@ -36,6 +36,7 @@ export function ClaimOverviewPage() {
   const query = useClaimState(claimId)
   const findings = useFindings(claimId)
   const checks = useChecks(claimId)
+  const checklist = useChecklist(claimId)
   const findingAction = useFindingAction(claimId)
   const [evidence, setEvidence] = useState<EvidenceRequest | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
@@ -110,10 +111,14 @@ export function ClaimOverviewPage() {
           hint={`of ${plural(state.documents.count, 'document')}`}
         />
         <Stat
-          icon={ClipboardList}
-          label="Document types"
-          value={`${Object.keys(state.documents.by_type).length}`}
-          hint="recognised from content"
+          icon={Stethoscope}
+          label="Procedure detected"
+          value={checklist.data?.procedure.key ? checklist.data.procedure.label : '—'}
+          hint={
+            checklist.data?.procedure.source_count
+              ? `named by ${plural(checklist.data.procedure.source_count, 'document')}`
+              : 'not named in the documents yet'
+          }
         />
         <Stat
           icon={Receipt}
@@ -133,6 +138,41 @@ export function ClaimOverviewPage() {
 
       <div className="grid grid-cols-1 items-start gap-6 xl:grid-cols-[minmax(0,1fr)_340px]">
         <div className="space-y-6">
+          <Card data-testid="checklist-card">
+            <CardHeader
+              title="Procedure checklist"
+              description="What a claim for this procedure is expected to carry, and what this one has."
+              actions={
+                checklist.data?.available ? (
+                  <span className="flex flex-wrap items-center gap-1.5">
+                    {checklist.data.summary.required_outstanding > 0 ? (
+                      <Badge tone="warning">
+                        {plural(checklist.data.summary.required_outstanding, 'requirement')} outstanding
+                      </Badge>
+                    ) : (
+                      <Badge tone="success">Every requirement covered</Badge>
+                    )}
+                  </span>
+                ) : undefined
+              }
+            />
+            {checklist.isPending ? (
+              <div className="space-y-2 p-5">
+                <Skeleton className="h-12 rounded-lg" />
+                <Skeleton className="h-12 rounded-lg" />
+              </div>
+            ) : checklist.data ? (
+              <>
+                <ProcedureSummary checklist={checklist.data} />
+                <ChecklistPanel checklist={checklist.data} />
+              </>
+            ) : (
+              <p className="px-5 py-6 text-sm text-slate-500">
+                {checklist.error?.message ?? 'The checklist is unavailable.'}
+              </p>
+            )}
+          </Card>
+
           <Card data-testid="findings-card">
             <CardHeader
               title="Findings"

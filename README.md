@@ -33,8 +33,8 @@ Document upload → OCR → Classification → Extraction → Claim structuring
 | 3 | Document intelligence: OCR, classification, extraction, evidence | ✅ Done |
 | 4 | Canonical claim model and evidence viewer | ✅ Done |
 | 5 | Cross-document validation and findings | ✅ Done |
-| 6 | Procedure detection and procedure checklist engine | ⏳ Next |
-| 7 | Interactive questions, upload and incremental re-analysis | ⏳ |
+| 6 | Procedure detection and procedure checklist engine | ✅ Done |
+| 7 | Interactive questions, upload and incremental re-analysis | ⏳ Next |
 | 8 | Readiness engine and dashboard | ⏳ |
 | 9 | Final report (PDF / Excel) and audit trail | ⏳ |
 | 10 | UI polish and demo experience | ⏳ |
@@ -122,8 +122,9 @@ Text that a document hides behind opaque paint is detected, reported separately 
 ### The canonical claim
 
 The extracted values are assembled into one structured claim: patient, admission, diagnosis,
-procedures, doctors, investigations, documents, bills and findings, plus the sections whose
-engines arrive later (checklist, questions, resolutions) — present, empty and labelled.
+procedures, doctors, investigations, documents, bills, findings and the procedure checklist,
+plus the sections whose engines arrive later (questions, resolutions) — present, empty and
+labelled.
 
 Where several documents carry the same value they are compared in a normalised form (names
 without honorifics, dates as calendar dates, identifiers without punctuation, amounts
@@ -164,6 +165,35 @@ Nothing is called fraud, forgery or fake — in the rules, in the interface or i
 finding says what differs, points at the page, and says what to do about it; the decision stays
 with the person reading it.
 
+### Procedure detection and the checklist
+
+The procedure is read from the documents, not from the claim form: "Laparoscopic
+Cholecystectomy", "Lap Chole" and "Lap. Cholecystectomy" are one operation, and the claim's
+procedure is the one its documents agree on. Prototype checklists exist for laparoscopic
+cholecystectomy, total knee replacement and cataract surgery; a claim for anything else says so
+and names the ones that have a checklist rather than guessing.
+
+[`backend/config/checklists.yaml`](backend/config/checklists.yaml) holds the requirements — what
+each is, which document types satisfy it, how much a missing one matters and what to do about
+it. A procedure lists the requirements it needs and may override any of them: a knee replacement
+always expects an implant invoice, where a cholecystectomy expects one only when an implant was
+billed, and a cataract claim expects the anaesthesia chart only where the records show more than
+local or topical anaesthesia.
+
+| Status | Meaning |
+|--------|---------|
+| Found | a document of an accepted type is in the claim |
+| Missing | no document of an accepted type is in the claim |
+| Review required | such a document is there and an open finding is about it |
+| Not applicable | the requirement's condition does not hold for this claim |
+
+Requirements are matched against the document type recognised from the content, so a file named
+`Operative_Note.pdf` that is not one satisfies nothing, and a copy excluded as a duplicate
+satisfies nothing either. The checklist reports; it raises no findings of its own, and lists the
+findings the rules raised against the requirement they belong to. A requirement is satisfied by
+a document as a whole, so it cites the document and no page — page-level evidence belongs to the
+values read from it.
+
 ## API
 
 | Endpoint | Description |
@@ -185,6 +215,7 @@ with the person reading it.
 | `GET /api/claims/{id}/state` | The canonical claim: every section, every value with its sources, weights and competing values |
 | `GET /api/claims/{id}/findings[?status=&severity=]` | Findings with their evidence, status and the actions that apply |
 | `GET /api/claims/{id}/checks` | Every check that ran: passed, finding raised, waiting or not applicable |
+| `GET /api/claims/{id}/checklist` | The detected procedure and its checklist: each requirement found, missing, review required or not applicable, with the documents that satisfy it |
 | `POST /api/claims/{id}/validate` | Run the rules again over the documents as they stand |
 | `POST /api/findings/{id}/action` | `review`, `resolve`, `acknowledge`, `reopen` or `exclude_duplicate` |
 | `POST /api/demo/reset` | Body `{"confirm": true}` (JSON only, so other web pages cannot trigger it). Delete all claims and originals, recreate and verify the demo data, restart numbering. Application settings are kept; in-flight requests finish first. |
@@ -210,21 +241,22 @@ In development, the Vite dev server forwards `/api` to `http://127.0.0.1:8010`. 
 │   │   ├── storage.py       write-once original storage (SHA-256, read-only)
 │   │   ├── audit.py         audit trail helper
 │   │   ├── worker.py        single-threaded processing queue (FIFO, restart-safe)
-│   │   ├── api/             routes: health, claims, documents, analysis, demo, audit
+│   │   ├── api/             routes: health, claims, documents, analysis, validation, checklist, demo, audit
 │   │   ├── services/        claims, numbering, intake, demo packs, analysis, canonical, validation, workspace reset
 │   │   ├── processing/      text layer and covered text, rendering, OCR, quality, signatures, pipeline
 │   │   ├── analysis/        classification, value normalisation, field and bill extraction
 │   │   ├── canonical/       canonical claim: field map, weighted value selection, builder
 │   │   ├── validation/      rule registry, duplicate detection, the checks and the engine
+│   │   ├── checklist/       procedure checklist engine
 │   │   └── demo_gen/        deterministic synthetic document generator
-│   ├── config/              document_types.yaml, quality.yaml, canonical.yaml, rules.yaml
+│   ├── config/              document_types.yaml, quality.yaml, canonical.yaml, rules.yaml, checklists.yaml
 │   ├── scripts/             ensure_db.py, smoke_test.py
 │   └── tests/               pytest suite (isolated SQLite)
 ├── demo_data/               generated synthetic claim documents, OCR fixtures and manifest
 ├── frontend/                React web app
 │   └── src/
 │       ├── app/             router, layout, error boundary
-│       ├── components/      layout, UI primitives, claims, upload, analysis, canonical, findings
+│       ├── components/      layout, UI primitives, claims, upload, analysis, canonical, findings, checklist
 │       ├── lib/             API client, hooks, types, formatting
 │       └── pages/           Dashboard, My Claims, New Claim, claim overview, claim intake, Reports, Settings
 ├── docker-compose.yml       optional PostgreSQL

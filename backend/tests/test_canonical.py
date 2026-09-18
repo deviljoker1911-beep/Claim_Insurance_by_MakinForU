@@ -498,14 +498,15 @@ def test_investigations_are_listed_with_their_documents(analysed):
 
 def test_sections_whose_engines_are_not_built_yet_are_present_and_empty(analysed):
     state = analysed["state"]
-    for section, phase in (("checklist", "phase 6"), ("questions", "phase 7"), ("resolutions", "phase 7")):
+    for section, phase in (("questions", "phase 7"), ("resolutions", "phase 7")):
         assert state[section]["available"] is False
         assert state[section]["items"] == []
         assert state[section]["count"] == 0
         assert phase in state[section]["note"]
-    assert set(state["meta"]["pending_sections"]) == {"checklist", "questions", "resolutions"}
-    # Findings arrived with the validation engine.
+    assert set(state["meta"]["pending_sections"]) == {"questions", "resolutions"}
+    # Findings arrived with the validation engine, the checklist with the checklist engine.
     assert state["findings"]["available"] is True
+    assert state["checklist"]["available"] is True
 
 
 def test_the_snapshot_carries_the_audit_trail(analysed):

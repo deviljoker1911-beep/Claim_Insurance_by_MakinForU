@@ -17,6 +17,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.analysis.classify import type_label
+from app.checklist import engine as checklist_engine
 from app.canonical import keys as canonical_keys
 from app.canonical.selection import (
     Candidate,
@@ -374,6 +375,26 @@ def _findings_section(findings: list[Finding]) -> dict:
     }
 
 
+def _finding_refs(findings: list[Finding]) -> list[dict]:
+    """What the checklist needs in order to link a requirement to the findings about it."""
+    return [
+        {
+            "id": finding.id,
+            "rule_id": finding.rule_id,
+            "code": finding.code,
+            "severity": finding.severity,
+            "status": finding.status,
+            "title": finding.title,
+            "subject": finding.subject,
+            "is_active": finding.status in FINDING_ACTIVE_STATUSES,
+            "document_ids": sorted(
+                {item.get("document_id") for item in (finding.evidence or []) if item.get("document_id")}
+            ),
+        }
+        for finding in sorted(findings, key=lambda row: (row.rule_id, row.subject))
+    ]
+
+
 def _audit_events(events: list[AuditEvent]) -> dict:
     limit = int(canonical_config().get("max_audit_events", 100))
     tail = events[-limit:]
@@ -470,6 +491,8 @@ def build_claim_state(session: Session, claim: Claim) -> dict:
         "findings": _findings_section(findings),
         "audit_events": _audit_events(events),
     }
+    # The checklist reads the sections above, so it is built once they are all there.
+    state["checklist"] = checklist_engine.build_checklist(state, _finding_refs(findings))
     for section, note in canonical_keys.PENDING_SECTIONS.items():
         state[section] = {"available": False, "count": 0, "items": [], "note": note}
     return state

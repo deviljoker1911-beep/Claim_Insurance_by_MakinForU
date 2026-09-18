@@ -232,8 +232,8 @@ def main() -> int:
     check("1,000.00" not in json.dumps(state), "covered text never reaches the canonical claim")
     check(state["documents"]["count"] == 18, "document inventory lists all 18 documents")
     check(
-        all(not state[section]["available"] and state[section]["items"] == [] for section in ("checklist", "questions", "resolutions")),
-        "checklist, questions and resolutions are present and empty",
+        all(not state[section]["available"] and state[section]["items"] == [] for section in ("questions", "resolutions")),
+        "questions and resolutions are present and empty",
     )
 
     print("8. Cross-document validation")
@@ -358,7 +358,49 @@ def main() -> int:
         "the canonical claim carries the findings summary",
     )
 
-    print(f"11. Database and storage ({dialect})")
+    print("11. Procedure checklist")
+    status, clean_list = call(base, "GET", f"/api/claims/{second['id']}/checklist")
+    check(status == 200 and clean_list["available"], "the complete claim has a checklist")
+    check(
+        clean_list["procedure"]["key"] == "laparoscopic_cholecystectomy",
+        f"procedure detected from the documents: {clean_list['procedure']['label']} "
+        f"({clean_list['procedure']['source_count']} documents)",
+    )
+    clean_rows = {item["key"]: item for item in clean_list["items"]}
+    check(clean_rows["operative_note"]["status"] == "found", "the operative note satisfies its requirement")
+    check(
+        clean_rows["operative_note"]["evidence"][0]["page"] is None
+        and "page-level evidence unavailable" in clean_rows["operative_note"]["evidence"][0]["detail"],
+        "a document satisfies a requirement as a whole, with no page invented for it",
+    )
+
+    status, staged_list = call(base, "GET", f"/api/claims/{first['id']}/checklist")
+    staged_rows = {item["key"]: item for item in staged_list["items"]}
+    check(
+        staged_rows["operative_note"]["status"] == "missing"
+        and staged_rows["anaesthesia_record"]["status"] == "missing",
+        "the staged claim is missing the operative note and the anaesthesia record",
+    )
+    check(
+        [f["code"] for f in staged_rows["operative_note"]["findings"]] == ["MISSING_REQUIRED_DOCUMENT"],
+        "the missing requirement carries the finding the rules raised for it",
+    )
+    check(staged_rows["operative_note"]["evidence"] == [], "a missing requirement cites no document")
+    check(
+        staged_rows["consent"]["status"] == "review_required",
+        f"the unsigned consent asks for a person: {staged_rows['consent']['detail'][:60]}…",
+    )
+    check(
+        all(
+            item["document_name"] != "11_Lab_Report_copy.pdf"
+            for item in staged_rows["investigation_reports"]["evidence"]
+        ),
+        "the copy excluded a moment ago satisfies nothing",
+    )
+    status, again_list = call(base, "GET", f"/api/claims/{first['id']}/checklist")
+    check(again_list == staged_list, "reading the checklist twice gives the same answer")
+
+    print(f"12. Database and storage ({dialect})")
     engine = make_engine(settings.database_url)
     try:
         with Session(engine) as session:
@@ -416,6 +458,11 @@ def main() -> int:
             check(
                 snapshot.content_sha256 == rebuilt["snapshot"]["content_sha256"] and snapshot.processed_count == 18,
                 "stored snapshot matches what the API served",
+            )
+            check(
+                snapshot.payload["checklist"]["available"]
+                and snapshot.payload["checklist"]["procedure"]["key"] == "laparoscopic_cholecystectomy",
+                "stored snapshot holds the procedure checklist",
             )
             check(
                 snapshot.payload["patient"]["fields"]["name"]["value"] == "Rajesh Sharma",

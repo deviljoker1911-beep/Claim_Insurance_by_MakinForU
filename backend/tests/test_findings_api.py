@@ -526,7 +526,7 @@ def test_the_canonical_claim_carries_the_findings_summary(client, staged):
     assert section["active"] == findings["summary"]["active"]
     assert {item["id"] for item in section["items"]} == {item["id"] for item in findings["items"]}
     # The sections whose engines come later stay empty.
-    for pending in ("checklist", "questions", "resolutions"):
+    for pending in ("questions", "resolutions"):
         assert state[pending]["available"] is False
         assert state[pending]["items"] == []
 

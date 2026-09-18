@@ -99,8 +99,64 @@ def rules_config() -> dict[str, Any]:
     return data
 
 
+@lru_cache
+def checklists_config() -> dict[str, Any]:
+    """The procedure checklists, checked against the document types and the conditions we have."""
+    data = _load("checklists.yaml", ("requirements", "procedures", "conditions", "settings"))
+    known_types = {entry["key"] for entry in document_types_config()["types"]}
+    conditions = set(data["conditions"])
+    severities = ("critical", "review", "warning", "info")
+
+    catalogue: dict[str, dict] = {}
+    for requirement in data["requirements"]:
+        for key in ("key", "label", "description", "doc_types", "severity", "resolution"):
+            if not requirement.get(key):
+                raise ConfigError(f"checklists.yaml: requirement {requirement.get('key', '?')} is missing {key}")
+        if requirement["key"] in catalogue:
+            raise ConfigError(f"checklists.yaml: duplicate requirement {requirement['key']}")
+        unknown = [name for name in requirement["doc_types"] if name not in known_types]
+        if unknown:
+            raise ConfigError(f"checklists.yaml: {requirement['key']} names unknown document types: {unknown}")
+        if requirement["severity"] not in severities:
+            raise ConfigError(f"checklists.yaml: {requirement['key']} has an unknown severity")
+        if requirement.get("applies_when", "always") not in conditions:
+            raise ConfigError(f"checklists.yaml: {requirement['key']} names an unknown condition")
+        catalogue[requirement["key"]] = requirement
+
+    seen: set[str] = set()
+    for procedure in data["procedures"]:
+        if not procedure.get("key") or not procedure.get("label"):
+            raise ConfigError("checklists.yaml: every procedure needs a key and a label")
+        if procedure["key"] in seen:
+            raise ConfigError(f"checklists.yaml: duplicate procedure {procedure['key']}")
+        seen.add(procedure["key"])
+        entries = procedure.get("requires") or []
+        if not entries:
+            raise ConfigError(f"checklists.yaml: procedure {procedure['key']} requires nothing")
+        used: set[str] = set()
+        for entry in entries:
+            key = entry if isinstance(entry, str) else entry.get("key")
+            if key not in catalogue:
+                raise ConfigError(f"checklists.yaml: {procedure['key']} names unknown requirement {key!r}")
+            if key in used:
+                raise ConfigError(f"checklists.yaml: {procedure['key']} lists requirement {key} twice")
+            used.add(key)
+            if isinstance(entry, dict):
+                if entry.get("severity") and entry["severity"] not in severities:
+                    raise ConfigError(f"checklists.yaml: {procedure['key']}/{key} has an unknown severity")
+                if entry.get("applies_when", "always") not in conditions:
+                    raise ConfigError(f"checklists.yaml: {procedure['key']}/{key} names an unknown condition")
+
+    text = " ".join(str(value).lower() for value in (data["requirements"], data["procedures"]))
+    banned = [word for word in ("fraud", "forged", "fake") if word in text]
+    if banned:
+        raise ConfigError(f"checklists.yaml uses forbidden wording: {banned}")
+    return data
+
+
 def reload_configs() -> None:
     document_types_config.cache_clear()
     quality_config.cache_clear()
     canonical_config.cache_clear()
     rules_config.cache_clear()
+    checklists_config.cache_clear()

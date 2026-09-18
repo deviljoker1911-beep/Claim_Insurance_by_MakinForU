@@ -451,7 +451,7 @@ export interface ClaimState {
     summary: { by_type: Record<string, number>; totals: BillTotal[] }
     note: string | null
   }
-  checklist: PendingSection
+  checklist: ChecklistSection
   findings: PendingSection
   questions: PendingSection
   resolutions: PendingSection
@@ -579,4 +579,86 @@ export interface ChecksResponse {
 export interface FindingActionResult {
   finding: Finding
   summary: FindingSummary
+}
+
+/** --- Procedure checklist (phase 6) --- */
+
+export type ChecklistStatus = 'found' | 'missing' | 'review_required' | 'not_applicable'
+
+export interface ChecklistEvidence {
+  document_id: string
+  document_name: string
+  doc_type: string | null
+  doc_type_label: string | null
+  classification_confidence: number | null
+  classification_method: string | null
+  page_count: number | null
+  page: number | null
+  detail: string
+}
+
+export interface ChecklistFindingRef {
+  id: string
+  rule_id: string
+  code: string
+  severity: Severity
+  status: FindingStatus
+  title: string
+  subject: string
+  is_active: boolean
+  document_ids: string[]
+}
+
+export interface ChecklistItem {
+  key: string
+  label: string
+  description: string
+  doc_types: string[]
+  doc_type_labels: string[]
+  required: boolean
+  severity: Severity
+  applies_when: string
+  resolution: string
+  status: ChecklistStatus
+  detail: string
+  evidence: ChecklistEvidence[]
+  findings: ChecklistFindingRef[]
+}
+
+export interface ChecklistProcedure {
+  key: string | null
+  label: string
+  has_checklist: boolean
+  source_count: number
+  documents: { document_id: string; document_name: string; value: string | null; page: number | null }[]
+  written_as: string[]
+  also_named: { key: string | null; label: string; source_count: number }[]
+}
+
+export interface ChecklistSummary {
+  found: number
+  missing: number
+  review_required: number
+  not_applicable: number
+  total: number
+  required: number
+  required_outstanding: number
+  by_severity: Record<Severity, number>
+}
+
+export interface ChecklistSection {
+  available: boolean
+  checklist_version: number
+  procedure: ChecklistProcedure
+  provisional: boolean
+  count: number
+  summary: ChecklistSummary
+  items: ChecklistItem[]
+  configured_procedures: { key: string | null; label: string; source_count: number }[]
+  note: string | null
+}
+
+export interface ChecklistResponse extends ChecklistSection {
+  claim_id: string
+  claim_number: string
 }

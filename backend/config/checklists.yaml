@@ -1,0 +1,208 @@
+# Procedure-specific document checklists.
+#
+# The checklist says which documents a claim for a given procedure is expected to carry. It
+# reports; it never raises findings — the rules in rules.yaml do that — and it never changes a
+# document. Requirements are matched against the document types recognised from content, never
+# against file names, and a document excluded as a duplicate satisfies nothing.
+#
+#   status           meaning
+#   found            at least one document of an accepted type is in the claim
+#   missing          no document of an accepted type is in the claim
+#   review_required  such a document is there, and an open finding says a person should look
+#   not_applicable   the requirement's condition does not hold for this claim
+#
+# Fields of a requirement:
+#   key          stable identifier, used by the API and the UI
+#   label        what a reviewer is shown
+#   description  one line saying what the document is
+#   doc_types    the document types that satisfy it (from document_types.yaml)
+#   severity     how much a missing one matters: critical, review, warning or info
+#   required     false marks a supporting document; it is still reported when absent
+#   applies_when a condition key from `conditions` below (default: always)
+#   resolution   what a reviewer can do about it
+version: 1
+
+settings:
+  # A document carrying an open finding of one of these severities puts its requirement into
+  # review_required rather than found.
+  review_required_severities: [critical, review, warning]
+  # While any document is still in one of these processing states the checklist is provisional.
+  provisional_document_states: [pending, queued, processing]
+
+# Conditions a requirement may depend on. Every key here is implemented in
+# app/checklist/engine.py; a requirement naming anything else is a configuration error.
+conditions:
+  always: This requirement always applies.
+  implant_billed: An implant invoice is part of the claim.
+  general_anaesthesia: The documents record anaesthesia other than local or topical.
+
+# The catalogue. A procedure lists the requirements it needs and may override severity,
+# required or applies_when for its own case.
+requirements:
+  - key: pre_operative_assessment
+    label: Pre-operative assessment
+    description: The fitness assessment recorded before the operation.
+    doc_types: [pre_operative_assessment]
+    severity: review
+    resolution: Upload the pre-operative assessment, or record why it was not carried out.
+
+  - key: surgeon_consultation
+    label: Surgeon consultation
+    description: The consultation note that establishes the indication for surgery.
+    doc_types: [consultation]
+    severity: review
+    resolution: Upload the consultation note that supports the decision to operate.
+
+  - key: consent
+    label: Informed consent
+    description: The consent signed by the patient or the attendant before the operation.
+    doc_types: [consent]
+    severity: critical
+    resolution: Upload the signed consent form.
+
+  - key: anaesthesia_assessment
+    label: Anaesthesia assessment
+    description: The pre-anaesthetic evaluation.
+    doc_types: [anaesthesia_assessment]
+    severity: review
+    applies_when: general_anaesthesia
+    resolution: Upload the pre-anaesthetic assessment.
+
+  - key: operative_note
+    label: Operative note
+    description: The surgeon's record of the operation performed.
+    doc_types: [operative_note]
+    severity: critical
+    resolution: Upload the operative note, or record why it is not available.
+
+  - key: anaesthesia_record
+    label: Anaesthesia record
+    description: The intra-operative anaesthesia chart.
+    doc_types: [anaesthesia_record]
+    severity: critical
+    applies_when: general_anaesthesia
+    resolution: Upload the anaesthesia record, or record why it is not available.
+
+  - key: post_operative_notes
+    label: Post-operative notes
+    description: The progress notes written after the operation.
+    doc_types: [post_operative_note]
+    severity: review
+    resolution: Upload the post-operative progress notes.
+
+  - key: nursing_records
+    label: Nursing records
+    description: The ward nursing chart for the stay.
+    doc_types: [nursing_record]
+    severity: info
+    required: false
+    resolution: Upload the nursing record if the insurer asks for it.
+
+  - key: medication_records
+    label: Medication records
+    description: The prescription or medication chart for the admission.
+    doc_types: [prescription]
+    severity: info
+    required: false
+    resolution: Upload the prescription or medication chart if the insurer asks for it.
+
+  - key: investigation_reports
+    label: Investigation reports
+    description: The laboratory and imaging reports for the admission.
+    doc_types: [lab_report, investigation_report]
+    severity: review
+    resolution: Upload the investigation reports referred to in the clinical notes.
+
+  - key: discharge_summary
+    label: Discharge summary
+    description: The summary of the admission, the operation and the advice on discharge.
+    doc_types: [discharge_summary]
+    severity: critical
+    resolution: Upload the discharge summary.
+
+  - key: bills
+    label: Hospital bill
+    description: The final in-patient bill for the admission.
+    doc_types: [hospital_bill]
+    severity: critical
+    resolution: Upload the final hospital bill.
+
+  - key: implant_invoice
+    label: Implant invoice
+    description: The vendor invoice for an implant used during the operation.
+    doc_types: [implant_invoice]
+    severity: review
+    applies_when: implant_billed
+    resolution: Upload the implant invoice that matches the implant recorded in the operative note.
+
+procedures:
+  - key: laparoscopic_cholecystectomy
+    label: Laparoscopic cholecystectomy
+    note: >-
+      An in-patient laparoscopic operation under general anaesthesia. An implant invoice is
+      expected only when an implant was billed.
+    requires:
+      - pre_operative_assessment
+      - surgeon_consultation
+      - consent
+      - anaesthesia_assessment
+      - operative_note
+      - anaesthesia_record
+      - post_operative_notes
+      - nursing_records
+      - medication_records
+      - investigation_reports
+      - discharge_summary
+      - bills
+      - implant_invoice
+
+  - key: knee_replacement
+    label: Total knee replacement
+    note: >-
+      A joint replacement always uses an implant, so the invoice for it is expected with the
+      claim rather than only when one was billed.
+    requires:
+      - pre_operative_assessment
+      - surgeon_consultation
+      - consent
+      - anaesthesia_assessment
+      - operative_note
+      - anaesthesia_record
+      - post_operative_notes
+      - nursing_records
+      - medication_records
+      - investigation_reports
+      - discharge_summary
+      - bills
+      - key: implant_invoice
+        applies_when: always
+        severity: critical
+
+  - key: cataract_surgery
+    label: Cataract surgery
+    note: >-
+      Usually a day-care procedure under local or topical anaesthesia, so the anaesthesia
+      documents are expected only where the records show anaesthesia beyond that. An
+      intraocular lens is implanted in every case.
+    requires:
+      - pre_operative_assessment
+      - surgeon_consultation
+      - consent
+      - anaesthesia_assessment
+      - anaesthesia_record
+      - operative_note
+      - investigation_reports
+      - discharge_summary
+      - bills
+      - medication_records
+      - key: implant_invoice
+        label: Intraocular lens invoice
+        description: The vendor invoice for the intraocular lens implanted during the operation.
+        applies_when: always
+        severity: critical
+      - key: post_operative_notes
+        required: false
+        severity: info
+      - key: nursing_records
+        required: false
+        severity: info

@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { api, ApiError } from './api'
 import type {
+  ChecklistResponse,
   ChecksResponse,
   Claim,
   ClaimDetail,
@@ -95,6 +96,15 @@ export function useFindings(claimId: string) {
 }
 
 /** Every check the validation engine ran, and whether it passed, failed or is waiting. */
+export function useChecklist(claimId: string) {
+  return useQuery({
+    queryKey: ['claims', claimId, 'checklist'],
+    queryFn: () => api<ChecklistResponse>(`/claims/${encodeURIComponent(claimId)}/checklist`),
+    enabled: Boolean(claimId),
+    retry: (count, error) => !(error instanceof ApiError && error.status === 404) && count < 2,
+  })
+}
+
 export function useChecks(claimId: string) {
   return useQuery({
     queryKey: ['claims', claimId, 'checks'],
@@ -116,6 +126,7 @@ export function useFindingAction(claimId: string) {
       Promise.all([
         queryClient.invalidateQueries({ queryKey: ['claims', claimId, 'findings'] }),
         queryClient.invalidateQueries({ queryKey: ['claims', claimId, 'checks'] }),
+        queryClient.invalidateQueries({ queryKey: ['claims', claimId, 'checklist'] }),
         queryClient.invalidateQueries({ queryKey: ['claims', claimId, 'state'] }),
       ]),
   })
