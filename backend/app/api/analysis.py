@@ -13,6 +13,7 @@ from app.db import get_session
 from app.models import Document, DocumentPage
 from app.schemas import (
     BillOut,
+    ClaimStateOut,
     ConcealedSpanOut,
     ClaimProcessingOut,
     ClassificationOut,
@@ -25,6 +26,7 @@ from app.schemas import (
     SignatureSummaryOut,
 )
 from app.services import analysis as analysis_service
+from app.services import canonical as canonical_service
 from app.services.claims import get_claim_or_404, is_uuid
 from app.services.locks import WORKSPACE_LOCK
 from app.worker import get_worker
@@ -71,6 +73,18 @@ def claim_processing(claim_id: str, session: Session = Depends(get_session)) -> 
     with WORKSPACE_LOCK.shared():
         claim = get_claim_or_404(session, claim_id)
         return ClaimProcessingOut.model_validate(analysis_service.claim_state(session, claim))
+
+
+@router.get("/claims/{claim_id}/state", response_model=ClaimStateOut)
+def claim_state(claim_id: str, session: Session = Depends(get_session)) -> ClaimStateOut:
+    """The canonical claim: one structured claim assembled from the processed documents.
+
+    Rebuilt from the current extracted values on every request and stored when it changes, so
+    the answer is always a deterministic function of the documents as they stand.
+    """
+    with WORKSPACE_LOCK.shared():
+        claim = get_claim_or_404(session, claim_id)
+        return ClaimStateOut.model_validate(canonical_service.snapshot(session, claim))
 
 
 @router.get("/documents/{document_id}/processing", response_model=DocumentProcessingOut)

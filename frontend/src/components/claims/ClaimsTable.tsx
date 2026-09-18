@@ -91,12 +91,12 @@ export function ClaimsTable({ limit }: { limit?: number }) {
               <tr
                 key={claim.id}
                 data-testid="claim-row"
-                onClick={() => navigate(`/claims/${claim.id}/intake`)}
+                onClick={() => navigate(`/claims/${claim.id}`)}
                 className="cursor-pointer transition-colors hover:bg-slate-50/80"
               >
                 <td className="px-3 py-3.5 whitespace-nowrap">
                   <Link
-                    to={`/claims/${claim.id}/intake`}
+                    to={`/claims/${claim.id}`}
                     onClick={(event) => event.stopPropagation()}
                     className="block font-semibold text-brand-700 tabular-nums hover:underline"
                   >

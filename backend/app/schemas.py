@@ -389,6 +389,297 @@ class DocumentAnalysisOut(BaseModel):
     bill: BillOut | None = None
 
 
+# --- Canonical claim (phase 4) -----------------------------------------------------------
+
+
+class EvidenceSourceOut(BaseModel):
+    """Where one canonical value came from. Never invented: a source without a page says so."""
+
+    document_id: str
+    document_name: str
+    document_type: str | None = None
+    document_type_label: str | None = None
+    page: int | None = None
+    bounding_box: list[float] | None = None
+    snippet: str | None = None
+    method: str
+    source_type: str
+    source_type_label: str
+    extraction_method: str
+    confidence: float
+    weight: int
+    eligible: bool
+    excluded_reason: str | None = None
+    value: str | None = None
+    raw_value: str | None = None
+    field_key: str
+    derived_from: str | None = None
+    evidence_available: bool
+
+
+class ValueVariantOut(BaseModel):
+    value: str
+    source_count: int
+
+
+class CompetingValueOut(BaseModel):
+    value: str
+    normalized_value: str
+    weight: int
+    source_count: int
+    eligible_source_count: int
+    value_variants: list[ValueVariantOut] = []
+    sources: list[EvidenceSourceOut] = []
+
+
+class CanonicalValueOut(BaseModel):
+    key: str
+    label: str
+    kind: str
+    section: str
+    present: bool
+    value: str | None = None
+    normalized_value: str | None = None
+    confidence: float | None = None
+    weight: int | None = None
+    source_count: int = 0
+    value_variants: list[ValueVariantOut] = []
+    sources: list[EvidenceSourceOut] = []
+    evidence_available: bool = False
+    competing_values: list[CompetingValueOut] = []
+    has_competing_values: bool = False
+    note: str | None = None
+
+
+class CanonicalSectionOut(BaseModel):
+    fields: dict[str, CanonicalValueOut]
+    present_count: int
+    field_count: int
+
+
+class ProcedureItemOut(BaseModel):
+    procedure_key: str | None = None
+    label: str
+    value: str
+    normalized_value: str
+    weight: int
+    source_count: int
+    value_variants: list[ValueVariantOut] = []
+    sources: list[EvidenceSourceOut] = []
+    is_selected: bool
+
+
+class ProceduresSectionOut(BaseModel):
+    selected_key: str | None = None
+    selected: CanonicalValueOut | None = None
+    items: list[ProcedureItemOut] = []
+    fields: dict[str, CanonicalValueOut] = {}
+
+
+class InvestigationItemOut(BaseModel):
+    document_id: str
+    document_name: str
+    doc_type: str | None = None
+    doc_type_label: str | None = None
+    page_count: int | None = None
+    fields: dict[str, CanonicalValueOut] = {}
+
+
+class InvestigationsSectionOut(BaseModel):
+    count: int
+    items: list[InvestigationItemOut] = []
+
+
+class DocumentInventoryItemOut(BaseModel):
+    document_id: str
+    filename: str
+    doc_type: str | None = None
+    doc_type_label: str | None = None
+    classification_confidence: float | None = None
+    classification_method: str | None = None
+    processing_status: str
+    processing_stage: str | None = None
+    processing_error: str | None = None
+    page_count: int | None = None
+    quality_signals: list[QualityFlagOut] = []
+    quality_signal_count: int = 0
+    ocr_method: str | None = None
+    ocr_engine: str | None = None
+    ocr_confidence: float | None = None
+    text_source: str | None = None
+    concealed_text_count: int = 0
+    unsigned_required_slots: list[str | None] = []
+    extracted_field_count: int = 0
+    source: str
+    demo_set: str | None = None
+    sha256: str
+    size_bytes: int
+    uploaded_at: UTCDateTime | None = None
+    excluded: bool = False
+    exclusion_reason: str | None = None
+    duplicate_of: str | None = None
+    duplicate_state: str
+
+
+class DocumentsSectionOut(BaseModel):
+    count: int
+    items: list[DocumentInventoryItemOut] = []
+    by_type: dict[str, int] = {}
+    note: str | None = None
+
+
+class CanonicalBillLineEvidenceOut(BaseModel):
+    document_id: str
+    document_name: str
+    document_type: str | None = None
+    page: int | None = None
+    bounding_box: list[float] | None = None
+    snippet: str | None = None
+    method: str
+    source_type: str
+    confidence: float | None = None
+    evidence_available: bool
+
+
+class CanonicalBillLineOut(BaseModel):
+    line_no: int | None = None
+    description: str | None = None
+    quantity: str | None = None
+    rate: str | None = None
+    amount: str | None = None
+    batch: str | None = None
+    expiry: str | None = None
+    evidence: CanonicalBillLineEvidenceOut
+
+
+class CanonicalBillOut(BaseModel):
+    document_id: str
+    document_name: str
+    bill_type: str | None = None
+    bill_type_label: str | None = None
+    currency: str
+    page_number: int | None = None
+    columns: list[str] = []
+    notes: list[str] = []
+    line_item_count: int
+    line_items: list[CanonicalBillLineOut] = []
+    fields: dict[str, CanonicalValueOut] = {}
+
+
+class BillTotalOut(BaseModel):
+    document_id: str
+    document_name: str
+    bill_type: str | None = None
+    bill_type_label: str | None = None
+    bill_number: str | None = None
+    bill_date: str | None = None
+    total: str | None = None
+    currency: str
+
+
+class BillsSummaryOut(BaseModel):
+    by_type: dict[str, int] = {}
+    totals: list[BillTotalOut] = []
+
+
+class BillsSectionOut(BaseModel):
+    count: int
+    items: list[CanonicalBillOut] = []
+    summary: BillsSummaryOut
+    note: str | None = None
+
+
+class PendingSectionOut(BaseModel):
+    """A section whose engine arrives in a later phase: present, empty and labelled."""
+
+    available: bool = False
+    count: int = 0
+    items: list[Any] = []
+    note: str
+
+
+class CanonicalAuditEventOut(BaseModel):
+    id: int
+    event_type: str
+    actor: str
+    message: str
+    document_id: str | None = None
+    created_at: UTCDateTime | None = None
+
+
+class AuditEventsSectionOut(BaseModel):
+    count: int
+    included: int
+    items: list[CanonicalAuditEventOut] = []
+
+
+class ClaimFormOut(BaseModel):
+    patient_name: str
+    uhid: str
+    hospital: str
+    insurer: str
+    tpa: str | None = None
+    admission_date: date | None = None
+    discharge_date: date | None = None
+
+
+class ClaimHeaderOut(BaseModel):
+    claim_id: str
+    claim_number: str
+    status: str
+    is_demo: bool
+    hospital: str
+    insurer: str
+    tpa: str | None = None
+    created_by: str
+    created_at: UTCDateTime | None = None
+    form: ClaimFormOut
+
+
+class ValueSelectionOut(BaseModel):
+    document_weights: dict[str, int]
+    default_weight: int
+    ocr_confidence_floor: float
+    rule: str
+
+
+class CanonicalMetaOut(BaseModel):
+    generator_version: int
+    analysis_state: str
+    document_counts: dict[str, int]
+    value_selection: ValueSelectionOut
+    pending_sections: dict[str, str]
+
+
+class SnapshotOut(BaseModel):
+    content_sha256: str
+    generator_version: int
+    generated_at: UTCDateTime
+    document_count: int
+    processed_count: int
+
+
+class ClaimStateOut(BaseModel):
+    """The canonical claim: one structured claim assembled from the documents."""
+
+    claim: ClaimHeaderOut
+    meta: CanonicalMetaOut
+    patient: CanonicalSectionOut
+    admission: CanonicalSectionOut
+    diagnosis: CanonicalSectionOut
+    procedures: ProceduresSectionOut
+    doctors: CanonicalSectionOut
+    investigations: InvestigationsSectionOut
+    documents: DocumentsSectionOut
+    bills: BillsSectionOut
+    checklist: PendingSectionOut
+    findings: PendingSectionOut
+    questions: PendingSectionOut
+    resolutions: PendingSectionOut
+    audit_events: AuditEventsSectionOut
+    snapshot: SnapshotOut
+
+
 class AuditEventOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

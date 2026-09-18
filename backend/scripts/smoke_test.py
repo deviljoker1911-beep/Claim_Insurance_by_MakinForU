@@ -24,7 +24,15 @@ from sqlalchemy.orm import Session  # noqa: E402
 
 from app.config import get_settings  # noqa: E402
 from app.db import make_engine  # noqa: E402
-from app.models import AuditEvent, Claim, Document, DocumentBill, DocumentPage, ExtractedField  # noqa: E402
+from app.models import (  # noqa: E402
+    AuditEvent,
+    Claim,
+    ClaimState,
+    Document,
+    DocumentBill,
+    DocumentPage,
+    ExtractedField,
+)
 
 
 class SmokeFailure(AssertionError):
@@ -172,7 +180,75 @@ def main() -> int:
     status, image = call(base, "GET", page_url)
     check(status == 200 and image[:8] == b"\x89PNG\r\n\x1a\n", "page images are served as PNG")
 
-    print(f"7. Database and storage ({dialect})")
+    print("7. Canonical claim")
+    status, state = call(base, "GET", f"/api/claims/{second['id']}/state")
+    check(status == 200, "canonical claim served")
+    patient = state["patient"]["fields"]
+    admission = state["admission"]["fields"]
+    check(patient["name"]["value"] == "Rajesh Sharma", f"patient name: {patient['name']['value']}")
+    check(patient["age"]["value"] == "46", f"age: {patient['age']['value']}")
+    check(patient["gender"]["value"] == "male", f"gender: {patient['gender']['value']}")
+    check(patient["uhid"]["value"] == "UHID-123456", f"UHID: {patient['uhid']['value']}")
+    check(patient["ipd"]["value"] == "IPD/2026/004512", f"IPD: {patient['ipd']['value']}")
+    check(state["claim"]["hospital"] == "CityCare Multispeciality Hospital", "hospital from the claim record")
+    check(
+        (admission["admission_date"]["value"], admission["discharge_date"]["value"]) == ("2026-01-12", "2026-01-16"),
+        "admission 12-01-2026 -> discharge 16-01-2026",
+    )
+    check(state["diagnosis"]["fields"]["primary"]["value"] == "Acute cholecystitis", "diagnosis: acute cholecystitis")
+    check(state["diagnosis"]["fields"]["icd10"]["value"] == "K81.0", "ICD-10: K81.0")
+    check(state["procedures"]["selected_key"] == "laparoscopic_cholecystectomy", "procedure: laparoscopic cholecystectomy")
+    check(state["doctors"]["fields"]["surgeon"]["value"] == "Dr. Anil Mehta", "surgeon: Dr. Anil Mehta")
+    check(state["doctors"]["fields"]["anaesthetist"]["value"] == "Dr. Priya Nair", "anaesthetist: Dr. Priya Nair")
+
+    weights = {source["document_name"]: source["weight"] for source in patient["name"]["sources"]}
+    check(
+        weights.get("01_Patient_ID.png") == 3 and weights.get("02_Admission_Form.pdf") == 3 and weights.get("03_Doctor_Consultation.pdf") == 1,
+        f"identity documents carry weight 3, others 1 ({patient['name']['source_count']} sources for the name)",
+    )
+    check(
+        all(source["page"] and source["bounding_box"] for source in patient["name"]["sources"]),
+        "every supporting source names a page and a region",
+    )
+    check(
+        [item["value"] for item in patient["name"]["competing_values"]] == ["Rajesh K"],
+        "the shortened name on the pharmacy bill is reported as a competing value",
+    )
+    bill_types = state["bills"]["summary"]["by_type"]
+    check(
+        bill_types == {"hospital_bill": 1, "implant_invoice": 1, "ot_bill": 1, "pharmacy_bill": 1},
+        f"four bill categories read: {bill_types}",
+    )
+    totals = {item["bill_type"]: item["total"] for item in state["bills"]["summary"]["totals"]}
+    check(
+        totals == {"hospital_bill": "114360.00", "pharmacy_bill": "9860.00", "ot_bill": "18000.00", "implant_invoice": "6600.00"},
+        f"bill totals as extracted: {totals}",
+    )
+    implant = next(item for item in state["bills"]["items"] if item["bill_type"] == "implant_invoice")
+    check(implant["line_items"][0]["rate"] == "1100.00", "the visible implant rate reaches the canonical claim")
+    check("1,000.00" not in json.dumps(state), "covered text never reaches the canonical claim")
+    check(state["documents"]["count"] == 18, "document inventory lists all 18 documents")
+    check(
+        all(item["duplicate_state"] == "not_evaluated" for item in state["documents"]["items"]),
+        "duplicate state is left for a later phase",
+    )
+    check(
+        all(not state[section]["available"] and state[section]["items"] == [] for section in ("checklist", "findings", "questions", "resolutions")),
+        "checklist, findings, questions and resolutions are present and empty",
+    )
+
+    status, again = call(base, "GET", f"/api/claims/{second['id']}/state")
+    check(
+        again["snapshot"]["content_sha256"] == state["snapshot"]["content_sha256"],
+        f"rebuilding the canonical claim is deterministic ({state['snapshot']['content_sha256'][:12]}…)",
+    )
+    check(
+        json.dumps({k: v for k, v in again.items() if k != "snapshot"}, sort_keys=True)
+        == json.dumps({k: v for k, v in state.items() if k != "snapshot"}, sort_keys=True),
+        "the two builds are byte-identical",
+    )
+
+    print(f"8. Database and storage ({dialect})")
     engine = make_engine(settings.database_url)
     try:
         with Session(engine) as session:
@@ -213,6 +289,16 @@ def main() -> int:
                 select(func.count()).select_from(Document).where(Document.processing_status != "processed", Document.claim_id == second["id"])
             )
             check(unprocessed == 0, "every document of the analysed claim is marked processed")
+            snapshot = session.scalar(select(ClaimState).where(ClaimState.claim_id == second["id"]))
+            check(snapshot is not None, "canonical snapshot stored")
+            check(
+                snapshot.content_sha256 == state["snapshot"]["content_sha256"] and snapshot.processed_count == 18,
+                "stored snapshot matches what the API served",
+            )
+            check(
+                snapshot.payload["patient"]["fields"]["name"]["value"] == "Rajesh Sharma",
+                "stored snapshot holds the canonical values",
+            )
             images = list((settings.storage_dir / "claims" / second["id"] / "pages").rglob("*.png"))
             check(len(images) == expected_pages, f"{len(images)} rendered page images on disk")
             originals_before = session.scalars(

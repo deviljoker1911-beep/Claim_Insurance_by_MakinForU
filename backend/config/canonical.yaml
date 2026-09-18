@@ -1,0 +1,21 @@
+# Canonical claim assembly (Phase 4).
+#
+# The canonical claim is built from the values Phase 3 extracted, never from separate
+# hard-coded data. When several documents carry the same value, a weighted vote decides
+# which one the canonical claim states; every supporting document stays visible as a source.
+version: 1
+generator_version: 1
+
+# Documents that carry the claim's identity data by design count for more.
+document_weights:
+  patient_id: 3
+  admission_record: 3
+  discharge_summary: 3
+default_weight: 1
+
+# A value read by OCR below this confidence does not take part in selection. It is still
+# listed as a source, marked as excluded with its reason, so nothing is hidden.
+ocr_confidence_floor: 0.80
+
+# Most recent audit events carried in the snapshot.
+max_audit_events: 100

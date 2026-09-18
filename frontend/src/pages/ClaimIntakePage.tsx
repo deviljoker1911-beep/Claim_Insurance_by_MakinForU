@@ -1,5 +1,5 @@
 import { useQueryClient } from '@tanstack/react-query'
-import { ArrowLeft, CircleCheck, FlaskConical, LoaderCircle, Play, ScanText, SearchX } from 'lucide-react'
+import { ArrowLeft, CircleCheck, FlaskConical, LayoutList, LoaderCircle, Play, ScanText, SearchX } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useParams } from 'react-router'
 
@@ -53,7 +53,10 @@ export function ClaimIntakePage() {
       setNotice(
         failed > 0
           ? { tone: 'info', text: `Analysis finished: ${plural(processed, 'document')} processed, ${failed} could not be read.` }
-          : { tone: 'success', text: `Analysis finished: ${plural(processed, 'document')} processed.` },
+          : {
+              tone: 'success',
+              text: `Analysis finished: ${plural(processed, 'document')} processed. Open the claim overview to see the structured claim and its evidence.`,
+            },
       )
     }
     previousState.current = state?.state
@@ -167,10 +170,16 @@ export function ClaimIntakePage() {
         title={`Claim ${data.claim_number}`}
         description="Upload the hospital documents for this claim. Originals are stored unchanged, each with a SHA-256 fingerprint."
         actions={
-          <ButtonLink to="/claims" variant="ghost" size="sm">
-            <ArrowLeft className="size-4" />
-            My Claims
-          </ButtonLink>
+          <>
+            <ButtonLink to={`/claims/${claimId}`} variant="secondary" size="sm">
+              <LayoutList className="size-4" />
+              Claim overview
+            </ButtonLink>
+            <ButtonLink to="/claims" variant="ghost" size="sm">
+              <ArrowLeft className="size-4" />
+              My Claims
+            </ButtonLink>
+          </>
         }
       />
       <ClaimSteps current={state && state.state !== 'idle' ? 2 : 1} />

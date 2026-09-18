@@ -205,6 +205,26 @@ class DocumentBill(Base):
     document: Mapped[Document] = relationship(back_populates="bill")
 
 
+class ClaimState(Base):
+    """The canonical claim, rebuilt from the processed documents of one claim.
+
+    The payload is a whole JSON document: it is always replaced with a new value, never
+    mutated in place, so SQLAlchemy always sees the change.
+    """
+
+    __tablename__ = "claim_states"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    claim_id: Mapped[str] = mapped_column(ForeignKey("claims.id", ondelete="CASCADE"), index=True, unique=True)
+    generator_version: Mapped[int] = mapped_column(Integer, default=1)
+    content_sha256: Mapped[str] = mapped_column(String(64))
+    document_count: Mapped[int] = mapped_column(Integer, default=0)
+    processed_count: Mapped[int] = mapped_column(Integer, default=0)
+    payload: Mapped[dict] = mapped_column(JSONType, default=dict)
+    generated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+
 class AuditEvent(Base):
     __tablename__ = "audit_events"
 
@@ -218,6 +238,15 @@ class AuditEvent(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
 
 
-WORKSPACE_MODELS = (ClaimCounter, Claim, Document, DocumentPage, ExtractedField, DocumentBill, AuditEvent)
+WORKSPACE_MODELS = (
+    ClaimCounter,
+    Claim,
+    Document,
+    DocumentPage,
+    ExtractedField,
+    DocumentBill,
+    ClaimState,
+    AuditEvent,
+)
 
 PROCESSING_STATUSES = ("pending", "queued", "processing", "processed", "failed")

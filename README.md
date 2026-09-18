@@ -31,8 +31,8 @@ Document upload → OCR → Classification → Extraction → Claim structuring
 | 1 | Application running: API health, app shell, tooling | ✅ Done |
 | 2 | Claim creation, multi-document upload, deterministic demo data | ✅ Done |
 | 3 | Document intelligence: OCR, classification, extraction, evidence | ✅ Done |
-| 4 | Canonical claim model | ⏳ Next |
-| 5 | Cross-document deterministic validation | ⏳ |
+| 4 | Canonical claim model and evidence viewer | ✅ Done |
+| 5 | Cross-document deterministic validation | ⏳ Next |
 | 6 | Procedure detection and procedure checklist engine | ⏳ |
 | 7 | Interactive questions, upload and incremental re-analysis | ⏳ |
 | 8 | Readiness engine and dashboard | ⏳ |
@@ -101,6 +101,7 @@ To run without PostgreSQL, use `DATABASE_URL=sqlite:///./storage/claimai.db`.
 3. **Add demo document pack** attaches the 16 synthetic documents. You can also drag the files from [`demo_data/initial`](demo_data/initial) into the upload area or browse for them.
 4. **Start Analysis.** The documents are processed one at a time; the timeline shows the stage each one is on (Rendering → OCR → Quality check → Classification → Extraction → Evidence).
 5. Each row then shows what was read: the document type with its confidence, the quality signals, and whether any text in the file is covered by opaque paint.
+6. **Claim overview** (`/claims/<id>`) shows the canonical claim: patient, admission, diagnosis, procedure, doctors, bills and the document inventory. Every value carries a **Source** chip — open it to see the document, the page, the highlighted region it was read from, the extraction method and the confidence.
 
 The synthetic claim and its deliberately seeded issues are described in [`demo_data/README.md`](demo_data/README.md).
 
@@ -116,6 +117,26 @@ The synthetic claim and its deliberately seeded issues are described in [`demo_d
 | Evidence | Every value keeps its document, page, page-relative box, snippet, method and confidence. A value that cannot be located says so rather than pointing at a page. |
 
 Text that a document hides behind opaque paint is detected, reported separately as a signal that needs human verification, and excluded from every extracted value.
+
+### The canonical claim
+
+The extracted values are assembled into one structured claim: patient, admission, diagnosis,
+procedures, doctors, investigations, documents, bills, plus the sections whose engines arrive
+later (checklist, findings, questions, resolutions) — present, empty and labelled.
+
+Where several documents carry the same value they are compared in a normalised form (names
+without honorifics, dates as calendar dates, identifiers without punctuation, amounts
+numerically) and each document contributes a weight: the insurance card, the admission record
+and the discharge summary count ×3, every other document ×1. A value read by OCR below 80%
+confidence is listed as a source but does not take part in the selection.
+
+Nothing is hidden by that choice. Every supporting document stays listed with its page and
+region, and when documents carry materially different values the canonical claim reports
+*multiple source values detected* with the competing values and their own sources — a
+statement of provenance, not a verdict. Judging those differences is phase 5.
+
+The snapshot is rebuilt from the stored documents whenever it is read, so it is a deterministic
+function of the analysis: two builds of the same state produce the same document, hash included.
 
 ## API
 
@@ -135,6 +156,7 @@ Text that a document hides behind opaque paint is detected, reported separately 
 | `GET /api/documents/{id}/pages` · `GET /api/documents/{id}/pages/{n}` | Page list · one page with its text and quality |
 | `GET /api/documents/{id}/pages/{n}/image` | Rendered page image (PNG, 150 dpi) |
 | `GET /api/documents/{id}/processing` | Processing state of one document |
+| `GET /api/claims/{id}/state` | The canonical claim: every section, every value with its sources, weights and competing values |
 | `POST /api/demo/reset` | Body `{"confirm": true}` (JSON only, so other web pages cannot trigger it). Delete all claims and originals, recreate and verify the demo data, restart numbering. Application settings are kept; in-flight requests finish first. |
 | `GET /api/demo/profile` · `GET /api/demo/files` | Demo claim details · list and download the demo files |
 | `GET /api/audit` | Workspace-wide audit events |
@@ -159,20 +181,21 @@ In development, the Vite dev server forwards `/api` to `http://127.0.0.1:8010`. 
 │   │   ├── audit.py         audit trail helper
 │   │   ├── worker.py        single-threaded processing queue (FIFO, restart-safe)
 │   │   ├── api/             routes: health, claims, documents, analysis, demo, audit
-│   │   ├── services/        claims, numbering, intake, demo packs, analysis, workspace reset
+│   │   ├── services/        claims, numbering, intake, demo packs, analysis, canonical, workspace reset
 │   │   ├── processing/      text layer and covered text, rendering, OCR, quality, signatures, pipeline
 │   │   ├── analysis/        classification, value normalisation, field and bill extraction
+│   │   ├── canonical/       canonical claim: field map, weighted value selection, builder
 │   │   └── demo_gen/        deterministic synthetic document generator
-│   ├── config/              document_types.yaml, quality.yaml
+│   ├── config/              document_types.yaml, quality.yaml, canonical.yaml
 │   ├── scripts/             ensure_db.py, smoke_test.py
 │   └── tests/               pytest suite (isolated SQLite)
 ├── demo_data/               generated synthetic claim documents, OCR fixtures and manifest
 ├── frontend/                React web app
 │   └── src/
 │       ├── app/             router, layout, error boundary
-│       ├── components/      layout, UI primitives, claims, upload, analysis
+│       ├── components/      layout, UI primitives, claims, upload, analysis, canonical
 │       ├── lib/             API client, hooks, types, formatting
-│       └── pages/           Dashboard, My Claims, New Claim, claim intake, Reports, Settings
+│       └── pages/           Dashboard, My Claims, New Claim, claim overview, claim intake, Reports, Settings
 ├── docker-compose.yml       optional PostgreSQL
 ├── Makefile
 └── .env.example
@@ -183,7 +206,7 @@ In development, the Vite dev server forwards `/api` to `http://127.0.0.1:8010`. 
 - Deterministic rules handle deterministic validation. An LLM is used only where semantic interpretation helps. Nothing in the pipeline calls a language model.
 - Every result says how it was produced: a PDF text layer, an OCR engine by name, or a labelled demo fixture. The application never claims an engine ran when it did not.
 - Original uploaded documents are never modified.
-- Every finding keeps its source document and page reference whenever possible, and never invents one.
+- Every value and every finding keeps its source document and page reference whenever possible, and never invents one. Where several documents agree, all of them stay listed.
 - AI-generated analysis is clearly distinguished from source evidence.
 - Nothing is labelled as fraud. Items are marked *Review Required*, or *Potential alteration detected — human verification required*.
 - The claim readiness score measures documentation completeness, not the probability that the insurer will accept the claim.

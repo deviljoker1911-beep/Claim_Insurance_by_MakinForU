@@ -289,6 +289,8 @@ def mark_failed(session: Session, document: Document, message: str) -> None:
 
 def finish_claim_if_done(session: Session, claim_id: str) -> None:
     """Move a claim to `processed` once none of its documents are waiting."""
+    from app.services import canonical as canonical_service
+
     claim = session.get(Claim, claim_id)
     if claim is None:
         return
@@ -307,6 +309,12 @@ def finish_claim_if_done(session: Session, claim_id: str) -> None:
         details={"processed": counts.get(STATUS_PROCESSED, 0), "failed": counts.get(STATUS_FAILED, 0)},
     )
     session.commit()
+    # Build the canonical claim from what was just extracted, so it is ready to be read.
+    try:
+        canonical_service.refresh(session, claim)
+    except Exception as exc:  # noqa: BLE001 — a snapshot failure must not fail the analysis
+        logger.exception("Could not build the canonical claim for %s: %s", claim.claim_number, exc)
+        session.rollback()
 
 
 # --- reporting ---------------------------------------------------------------------------

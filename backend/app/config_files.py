@@ -59,6 +59,19 @@ def quality_config() -> dict[str, Any]:
     return _load("quality.yaml", ("thresholds", "severity", "render_dpi"))
 
 
+@lru_cache
+def canonical_config() -> dict[str, Any]:
+    data = _load("canonical.yaml", ("document_weights", "default_weight", "ocr_confidence_floor"))
+    weights = data["document_weights"]
+    if not isinstance(weights, dict) or not all(isinstance(value, int) for value in weights.values()):
+        raise ConfigError("canonical.yaml: document_weights must map a document type to an integer weight")
+    floor = data["ocr_confidence_floor"]
+    if not isinstance(floor, (int, float)) or not 0 <= float(floor) <= 1:
+        raise ConfigError("canonical.yaml: ocr_confidence_floor must be between 0 and 1")
+    return data
+
+
 def reload_configs() -> None:
     document_types_config.cache_clear()
     quality_config.cache_clear()
+    canonical_config.cache_clear()

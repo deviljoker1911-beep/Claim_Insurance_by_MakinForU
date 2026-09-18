@@ -219,3 +219,249 @@ export interface ClaimProcessing {
   documents: DocumentProcessing[]
   worker: WorkerStatus
 }
+
+/** --- Canonical claim (phase 4) --- */
+
+export interface EvidenceSource {
+  document_id: string
+  document_name: string
+  document_type: string | null
+  document_type_label: string | null
+  page: number | null
+  bounding_box: number[] | null
+  snippet: string | null
+  method: string
+  source_type: string
+  source_type_label: string
+  extraction_method: string
+  confidence: number | null
+  weight: number
+  eligible: boolean
+  excluded_reason: string | null
+  value: string | null
+  raw_value: string | null
+  field_key: string
+  derived_from: string | null
+  evidence_available: boolean
+}
+
+export interface ValueVariant {
+  value: string
+  source_count: number
+}
+
+export interface CompetingValue {
+  value: string
+  normalized_value: string
+  weight: number
+  source_count: number
+  eligible_source_count: number
+  value_variants: ValueVariant[]
+  sources: EvidenceSource[]
+}
+
+export interface CanonicalValue {
+  key: string
+  label: string
+  kind: string
+  section: string
+  present: boolean
+  value: string | null
+  normalized_value: string | null
+  confidence: number | null
+  weight: number | null
+  source_count: number
+  value_variants: ValueVariant[]
+  sources: EvidenceSource[]
+  evidence_available: boolean
+  competing_values: CompetingValue[]
+  has_competing_values: boolean
+  note: string | null
+}
+
+export interface CanonicalSection {
+  fields: Record<string, CanonicalValue>
+  present_count: number
+  field_count: number
+}
+
+export interface ProcedureItem {
+  procedure_key: string | null
+  label: string
+  value: string
+  normalized_value: string
+  weight: number
+  source_count: number
+  value_variants: ValueVariant[]
+  sources: EvidenceSource[]
+  is_selected: boolean
+}
+
+export interface CanonicalBillLine {
+  line_no: number | null
+  description: string | null
+  quantity: string | null
+  rate: string | null
+  amount: string | null
+  batch: string | null
+  expiry: string | null
+  evidence: {
+    document_id: string
+    document_name: string
+    document_type: string | null
+    page: number | null
+    bounding_box: number[] | null
+    snippet: string | null
+    method: string
+    source_type: string
+    confidence: number | null
+    evidence_available: boolean
+  }
+}
+
+export interface CanonicalBill {
+  document_id: string
+  document_name: string
+  bill_type: string | null
+  bill_type_label: string | null
+  currency: string
+  page_number: number | null
+  columns: string[]
+  notes: string[]
+  line_item_count: number
+  line_items: CanonicalBillLine[]
+  fields: Record<string, CanonicalValue>
+}
+
+export interface BillTotal {
+  document_id: string
+  document_name: string
+  bill_type: string | null
+  bill_type_label: string | null
+  bill_number: string | null
+  bill_date: string | null
+  total: string | null
+  currency: string
+}
+
+export interface DocumentInventoryItem {
+  document_id: string
+  filename: string
+  doc_type: string | null
+  doc_type_label: string | null
+  classification_confidence: number | null
+  classification_method: string | null
+  processing_status: string
+  processing_stage: string | null
+  processing_error: string | null
+  page_count: number | null
+  quality_signals: QualityFlag[]
+  quality_signal_count: number
+  ocr_method: string | null
+  ocr_engine: string | null
+  ocr_confidence: number | null
+  text_source: string | null
+  concealed_text_count: number
+  unsigned_required_slots: (string | null)[]
+  extracted_field_count: number
+  source: string
+  demo_set: string | null
+  sha256: string
+  size_bytes: number
+  uploaded_at: string | null
+  excluded: boolean
+  exclusion_reason: string | null
+  duplicate_of: string | null
+  duplicate_state: string
+}
+
+export interface PendingSection {
+  available: boolean
+  count: number
+  items: unknown[]
+  note: string
+}
+
+export interface ClaimState {
+  claim: {
+    claim_id: string
+    claim_number: string
+    status: string
+    is_demo: boolean
+    hospital: string
+    insurer: string
+    tpa: string | null
+    created_by: string
+    created_at: string | null
+    form: {
+      patient_name: string
+      uhid: string
+      hospital: string
+      insurer: string
+      tpa: string | null
+      admission_date: string | null
+      discharge_date: string | null
+    }
+  }
+  meta: {
+    generator_version: number
+    analysis_state: string
+    document_counts: Record<string, number>
+    value_selection: {
+      document_weights: Record<string, number>
+      default_weight: number
+      ocr_confidence_floor: number
+      rule: string
+    }
+    pending_sections: Record<string, string>
+  }
+  patient: CanonicalSection
+  admission: CanonicalSection
+  diagnosis: CanonicalSection
+  procedures: {
+    selected_key: string | null
+    selected: CanonicalValue | null
+    items: ProcedureItem[]
+    fields: Record<string, CanonicalValue>
+  }
+  doctors: CanonicalSection
+  investigations: {
+    count: number
+    items: {
+      document_id: string
+      document_name: string
+      doc_type: string | null
+      doc_type_label: string | null
+      page_count: number | null
+      fields: Record<string, CanonicalValue>
+    }[]
+  }
+  documents: {
+    count: number
+    items: DocumentInventoryItem[]
+    by_type: Record<string, number>
+    note: string | null
+  }
+  bills: {
+    count: number
+    items: CanonicalBill[]
+    summary: { by_type: Record<string, number>; totals: BillTotal[] }
+    note: string | null
+  }
+  checklist: PendingSection
+  findings: PendingSection
+  questions: PendingSection
+  resolutions: PendingSection
+  audit_events: {
+    count: number
+    included: number
+    items: { id: number; event_type: string; actor: string; message: string; document_id: string | null; created_at: string | null }[]
+  }
+  snapshot: {
+    content_sha256: string
+    generator_version: number
+    generated_at: string
+    document_count: number
+    processed_count: number
+  }
+}

@@ -6,6 +6,7 @@ import type {
   ClaimDetail,
   ClaimInput,
   ClaimProcessing,
+  ClaimState,
   DemoAttachResult,
   DemoClaimProfile,
   DemoResetResult,
@@ -69,6 +70,16 @@ export function useClaimProcessing(claimId: string, options: { enabled?: boolean
   })
 }
 
+/** The canonical claim: one structured claim assembled from the processed documents. */
+export function useClaimState(claimId: string) {
+  return useQuery({
+    queryKey: ['claims', claimId, 'state'],
+    queryFn: () => api<ClaimState>(`/claims/${encodeURIComponent(claimId)}/state`),
+    enabled: Boolean(claimId),
+    retry: (count, error) => !(error instanceof ApiError && error.status === 404) && count < 2,
+  })
+}
+
 export function useStartAnalysis(claimId: string) {
   const queryClient = useQueryClient()
   return useMutation({
@@ -76,6 +87,7 @@ export function useStartAnalysis(claimId: string) {
     onSuccess: (state) => {
       queryClient.setQueryData(['claims', claimId, 'processing'], state)
       void queryClient.invalidateQueries({ queryKey: ['claims', claimId, 'processing'] })
+      void queryClient.invalidateQueries({ queryKey: ['claims', claimId, 'state'] })
     },
   })
 }
