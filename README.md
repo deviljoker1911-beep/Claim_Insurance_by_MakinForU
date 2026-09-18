@@ -36,8 +36,8 @@ Document upload → OCR → Classification → Extraction → Claim structuring
 | 6 | Procedure detection and procedure checklist engine | ✅ Done |
 | 7 | Interactive questions, grounded assistant and incremental re-analysis | ✅ Done |
 | 8 | Readiness, dashboard and human approval | ✅ Done |
-| 9 | Final report (PDF / Excel) and audit trail | ⏳ Next |
-| 10 | UI polish and demo experience | ⏳ |
+| 9 | Final report (HTML / PDF / Excel) and audit trail | ✅ Done |
+| 10 | UI polish and demo experience | ⏳ Next |
 
 ## Tech stack
 
@@ -284,6 +284,34 @@ anaesthesia record missing, **56%** once the operative note arrives, **68% needs
 once the anaesthesia record does, and **100% ready for human review** once the seven findings
 have been dealt with.
 
+### The report
+
+One report per claim, assembled once and rendered three ways: a standalone HTML page, a
+multi-page PDF and a workbook. They read the same because they are the same payload —
+`GET /api/claims/{id}/report` — built from the canonical claim, the findings, the checks, the
+checklist, the questions, the readiness and the audit trail. No format carries business logic
+of its own; nothing is recalculated for a renderer.
+
+The report keeps four kinds of statement apart, and says so on its own first page:
+
+| | |
+|---|---|
+| **Documented facts** | What the uploaded documents say, with the document and page each value was read from |
+| **System findings** | What the deterministic rules concluded, with their evidence and severity |
+| **Unresolved items** | What the claim is still waiting for |
+| **Human decisions** | What a person recorded: a finding dealt with, a question answered, an approval |
+
+Every page of the PDF carries the claim number, the page number and the line that a person
+makes the final decision; a demo claim carries the notice that its documents are synthetic. The
+workbook has a sheet per section — claim summary, readiness, documented facts, findings,
+checks, checklist, questions, human decisions, unresolved, documents, bills and the audit
+trail — and is written as Office Open XML directly, so the prototype gains no dependency and
+the same claim always produces the same bytes.
+
+An approval is reported as the claim holds it: a claim whose approval was superseded is
+reported as superseded, never as currently approved. Exporting a PDF or a workbook is recorded
+in the audit trail; reading the report is not.
+
 ## API
 
 | Endpoint | Description |
@@ -315,6 +343,10 @@ have been dealt with.
 | `GET /api/claims/{id}/readiness` | The readiness score, what each deduction is for, what is blocking it, and the seven workflow steps |
 | `POST /api/claims/{id}/review/approve` | A person approves the claim. Refused unless the documentation is ready for review, and refused a second time. |
 | `GET /api/dashboard` | The workspace: totals, average readiness, every claim with its score, and recent activity |
+| `GET /api/claims/{id}/report` | The report as data: the claim, its documented facts, the findings, what is outstanding, the human decisions and the audit trail |
+| `GET /api/claims/{id}/report.html` | The same report as a standalone page (own styles, no scripts) |
+| `GET /api/claims/{id}/report.pdf` | The same report as a multi-page PDF, page-numbered and downloadable |
+| `GET /api/claims/{id}/report.xlsx` | The same report as a workbook, one sheet per section |
 | `POST /api/claims/{id}/validate` | Run the rules again over the documents as they stand |
 | `POST /api/findings/{id}/action` | `review`, `resolve`, `acknowledge`, `reopen` or `exclude_duplicate` |
 | `POST /api/demo/reset` | Body `{"confirm": true}` (JSON only, so other web pages cannot trigger it). Delete all claims and originals, recreate and verify the demo data, restart numbering. Application settings are kept; in-flight requests finish first. |
@@ -340,7 +372,7 @@ In development, the Vite dev server forwards `/api` to `http://127.0.0.1:8010`. 
 │   │   ├── storage.py       write-once original storage (SHA-256, read-only)
 │   │   ├── audit.py         audit trail helper
 │   │   ├── worker.py        single-threaded processing queue (FIFO, restart-safe)
-│   │   ├── api/             routes: health, claims, documents, analysis, validation, checklist, questions, assistant, readiness, dashboard, demo, audit
+│   │   ├── api/             routes: health, claims, documents, analysis, validation, checklist, questions, assistant, readiness, dashboard, reports, demo, audit
 │   │   ├── services/        claims, numbering, intake, demo packs, analysis, canonical, validation, questions, re-analysis, assistant, review, dashboard, workspace reset
 │   │   ├── processing/      text layer and covered text, rendering, OCR, quality, signatures, pipeline
 │   │   ├── analysis/        classification, value normalisation, field and bill extraction
@@ -348,6 +380,7 @@ In development, the Vite dev server forwards `/api` to `http://127.0.0.1:8010`. 
 │   │   ├── validation/      rule registry, duplicate detection, the checks and the engine
 │   │   ├── checklist/       procedure checklist engine
 │   │   ├── readiness/       readiness scoring and the workflow steps
+│   │   ├── reports/         the report: one assembly, rendered as HTML, PDF and a workbook
 │   │   ├── questions/       what the claim asks the operator for
 │   │   ├── reanalysis/      the change model: two states compared
 │   │   ├── assistant/       claim context, providers, intents and the answer guard
@@ -359,7 +392,7 @@ In development, the Vite dev server forwards `/api` to `http://127.0.0.1:8010`. 
 ├── frontend/                React web app
 │   └── src/
 │       ├── app/             router, layout, error boundary
-│       ├── components/      layout, UI primitives, claims, upload, analysis, canonical, findings, checklist, questions, changes, assistant, readiness
+│       ├── components/      layout, UI primitives, claims, upload, analysis, canonical, findings, checklist, questions, changes, assistant, readiness, reports
 │       ├── lib/             API client, hooks, types, formatting
 │       └── pages/           Dashboard, My Claims, New Claim, claim overview, claim intake, Reports, Settings
 ├── docker-compose.yml       optional PostgreSQL

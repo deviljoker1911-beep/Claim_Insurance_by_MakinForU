@@ -1102,6 +1102,33 @@ class DashboardResponse(BaseModel):
     truncated: bool = False
 
 
+class ReportResponse(BaseModel):
+    """The claim pre-submission report.
+
+    Assembled from the canonical claim, the findings, the checks, the checklist, the questions,
+    the readiness and the audit trail. The PDF, the workbook and the HTML page render this
+    payload, so nothing can differ between them. Four kinds of statement are kept apart:
+    documented facts, system findings, unresolved items and human decisions.
+    """
+
+    meta: dict[str, Any]
+    claim: dict[str, Any]
+    summary: dict[str, Any]
+    readiness: ReadinessSectionOut
+    review: ReviewSectionOut
+    documented_facts: list[dict[str, Any]] = []
+    system_findings: list[dict[str, Any]] = []
+    validation_checks: list[dict[str, Any]] = []
+    checklist: dict[str, Any]
+    questions: list[dict[str, Any]] = []
+    human_decisions: list[dict[str, Any]] = []
+    unresolved: list[dict[str, Any]] = []
+    documents: list[dict[str, Any]] = []
+    bills: dict[str, Any]
+    investigations: list[dict[str, Any]] = []
+    audit_trail: list[dict[str, Any]] = []
+
+
 class ClaimStateOut(BaseModel):
     """The canonical claim: one structured claim assembled from the documents."""
 

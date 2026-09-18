@@ -108,3 +108,9 @@ export function fileErrors(error: unknown): FileError[] {
 export function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : 'Something went wrong'
 }
+
+/** Where the three renderings of one claim's report live. */
+export function reportUrls(claimId: string) {
+  const base = `/api/claims/${encodeURIComponent(claimId)}/report`
+  return { json: base, html: `${base}.html`, pdf: `${base}.pdf`, xlsx: `${base}.xlsx` }
+}

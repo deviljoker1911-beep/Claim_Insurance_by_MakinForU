@@ -17,6 +17,7 @@ import { BillsPanel } from '../components/canonical/BillsPanel'
 import { ChangeSummary } from '../components/changes/ChangeSummary'
 import { ChecklistPanel, ProcedureSummary } from '../components/checklist/ChecklistPanel'
 import { QuestionsPanel, QuestionsSummaryBadge } from '../components/questions/QuestionsPanel'
+import { ReportActions } from '../components/reports/ReportActions'
 import { ReadinessCard } from '../components/readiness/ReadinessCard'
 import { WorkflowStepper } from '../components/readiness/WorkflowStepper'
 import { ChecksPanel } from '../components/findings/ChecksPanel'
@@ -118,6 +119,7 @@ export function ClaimOverviewPage() {
         description="One structured claim, assembled from the documents. Every value keeps the page it was read from."
         actions={
           <>
+            <ReportActions claimId={claimId} size="sm" />
             <ButtonLink to={`/claims/${claimId}/intake`} variant="secondary" size="sm">
               <FileStack className="size-4" />
               Documents

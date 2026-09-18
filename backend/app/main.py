@@ -24,6 +24,7 @@ from app.api import (
     health,
     questions,
     readiness,
+    reports,
     validation,
 )
 from app.config import get_settings
@@ -76,6 +77,7 @@ app.include_router(questions.router, prefix="/api")
 app.include_router(assistant.router, prefix="/api")
 app.include_router(readiness.router, prefix="/api")
 app.include_router(dashboard.router, prefix="/api")
+app.include_router(reports.router, prefix="/api")
 app.include_router(demo.router, prefix="/api")
 app.include_router(audit.router, prefix="/api")
 

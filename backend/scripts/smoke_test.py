@@ -8,6 +8,7 @@ Database and storage checks use DATABASE_URL / STORAGE_DIR from the same .env as
 
 import argparse
 import hashlib
+import io
 import json
 import stat
 import sys
@@ -15,6 +16,7 @@ import time
 import urllib.error
 import urllib.request
 import uuid
+import zipfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -643,7 +645,63 @@ def main() -> int:
     )
     check(bool(dash["recent_activity"]), "recent activity comes from the audit trail")
 
-    print(f"14. Database and storage ({dialect})")
+    print("14. Reports and exports")
+    status, report = call(base, "GET", f"/api/claims/{second['id']}/report")
+    check(status == 200, f"report served: {len(report)} sections")
+    check(
+        report["claim"]["claim_number"] == second["claim_number"]
+        and report["meta"]["report_version"] >= 1
+        and report["meta"]["generated_at"],
+        f"the report names the claim it is about and when it was made ({report['meta']['generated_at']})",
+    )
+    status, readiness_now = call(base, "GET", f"/api/claims/{second['id']}/readiness")
+    check(
+        report["readiness"]["score"] == readiness_now["score"]
+        and report["readiness"]["breakdown"]["deductions"] == readiness_now["breakdown"]["deductions"],
+        "the report carries the readiness the claim has, deduction for deduction",
+    )
+    check(
+        report["review"]["state"] == "approved" and report["review"]["approved_by"] == "Demo Operator",
+        f"the human review is reported as it stands: {report['review']['state']}",
+    )
+    status, audit_before_reports = call(base, "GET", f"/api/claims/{second['id']}/audit")
+    check(
+        len(report["audit_trail"]) == len(audit_before_reports),
+        f"the audit trail is reported whole ({len(report['audit_trail'])} events)",
+    )
+    banned = [word for word in FORBIDDEN_WORDS if word in json.dumps(report).lower()]
+    check(not banned, "the report uses no accusing wording")
+
+    status, page = call(base, "GET", f"/api/claims/{second['id']}/report.html")
+    text = page.decode("utf-8") if isinstance(page, bytes) else str(page)
+    check(status == 200 and text.startswith("<!doctype html>"), f"HTML report served ({len(text)} characters)")
+    check("<script" not in text, "the HTML report carries no scripts")
+    check(str(report["readiness"]["score"]) + "%" in text, "the HTML report shows the readiness of the claim")
+
+    request = urllib.request.Request(f"{base}/api/claims/{second['id']}/report.pdf")
+    with urllib.request.urlopen(request, timeout=120) as response:
+        pdf_bytes = response.read()
+        disposition = response.headers.get("Content-Disposition", "")
+    check(pdf_bytes.startswith(b"%PDF"), f"PDF report served ({len(pdf_bytes) // 1024} KB)")
+    check("attachment" in disposition and ".pdf" in disposition, f"PDF download named: {disposition}")
+
+    request = urllib.request.Request(f"{base}/api/claims/{second['id']}/report.xlsx")
+    with urllib.request.urlopen(request, timeout=120) as response:
+        xlsx_bytes = response.read()
+        disposition = response.headers.get("Content-Disposition", "")
+    check(xlsx_bytes[:2] == b"PK", f"Excel report served ({len(xlsx_bytes) // 1024} KB)")
+    with zipfile.ZipFile(io.BytesIO(xlsx_bytes)) as archive:
+        sheets = [name for name in archive.namelist() if name.startswith("xl/worksheets/")]
+        check(archive.testzip() is None and len(sheets) == 12, f"the workbook holds {len(sheets)} sheets")
+
+    status, audit_reports = call(base, "GET", f"/api/claims/{second['id']}/audit")
+    exports = [event for event in audit_reports if event["event_type"] == "report_generated"]
+    check(
+        [event["details"]["format"] for event in exports] == ["pdf", "xlsx"],
+        "each export is recorded in the audit trail; reading the report is not",
+    )
+
+    print(f"15. Database and storage ({dialect})")
     engine = make_engine(settings.database_url)
     try:
         with Session(engine) as session:
@@ -677,6 +735,8 @@ def main() -> int:
                 "document_uploaded_for_question": 2,
                 "question_upload_did_not_match": 1,
                 "question_marked_unavailable": 1,
+                # One PDF and one workbook were exported in the reports section.
+                "report_generated": 2,
             }
             wrong = {name: (counts.get(name), total) for name, total in fixed.items() if counts.get(name) != total}
             check(not wrong, f"audit events counted exactly: {wrong or fixed}")
