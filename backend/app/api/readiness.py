@@ -33,6 +33,8 @@ def claim_readiness(claim_id: str, session: Session = Depends(get_session)) -> R
         claim = get_claim_or_404(session, claim_id)
         state = _state(session, claim)
         readiness = state["readiness"]
+        if review_service.refresh_approval(session, claim, state, readiness):
+            state = canonical_service.build(session, claim)
         review_service.note_ready_for_review(session, claim, readiness)
         return ReadinessResponse.model_validate(
             {
@@ -65,6 +67,7 @@ def approve_claim(
                 readiness,
                 actor=get_settings().operator_name,
                 note=(request.note if request else None),
+                state=state,
             )
         except review_service.ApprovalNotAllowed as exc:
             raise HTTPException(status_code=exc.status, detail=str(exc)) from exc

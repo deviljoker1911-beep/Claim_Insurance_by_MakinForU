@@ -45,6 +45,7 @@ def _claim_row(session: Session, claim: Claim) -> dict:
         "review_state": claim.review_state,
         "approved_by": claim.approved_by,
         "approved_at": claim.approved_at,
+        "superseded_at": claim.superseded_at,
         "status": claim.status,
         "is_demo": claim.is_demo,
         "created_at": claim.created_at,

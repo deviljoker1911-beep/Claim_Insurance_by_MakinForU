@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from app.config_files import readiness_config, rules_config
 from app.models import FINDING_ACTIVE_STATUSES, QUESTION_PENDING_STATUSES
+from app.validation.rules import required_documents
 
 INCOMPLETE = "incomplete"
 NEEDS_ATTENTION = "needs_attention"
@@ -65,6 +66,14 @@ def _deduction(reason: str, amount: int, kind: str, key: str, label: str, **extr
         "amount": amount,
         "source": {"kind": kind, "key": key, "label": label, **extra},
     }
+
+
+def _covered_by_checklist(finding: dict, rule_requirement_types: dict[str, set], covered_types: set[str]) -> bool:
+    """Whether a missing-document finding is about a document type the checklist charges for."""
+    subject = finding.get("subject") or ""
+    if not subject.startswith("requirement:"):
+        return False
+    return bool(rule_requirement_types.get(subject.split(":", 1)[1], set()) & covered_types)
 
 
 def evaluate(state: dict, questions: list[dict]) -> dict:
@@ -162,10 +171,19 @@ def evaluate(state: dict, questions: list[dict]) -> dict:
                 }
             )
 
+    # The document types the checklist itself is responsible for. A missing-document finding
+    # about one of them is already charged as that requirement; one about anything else — a
+    # document the rules require but no checklist requirement covers — is charged here, so that
+    # no required document can be missing for nothing.
+    covered_types = {doc_type for item in items if item["required"] for doc_type in item["doc_types"]}
+    rule_requirement_types = {item["key"]: set(item["doc_types"]) for item in required_documents()}
+
     counted_findings = []
     for finding in sorted(active, key=lambda item: (item["severity"], item["code"], item["id"])):
-        if finding["code"] == MISSING_REQUIRED_DOCUMENT:
-            continue  # charged as the missing document it is about
+        if finding["code"] == MISSING_REQUIRED_DOCUMENT and _covered_by_checklist(
+            finding, rule_requirement_types, covered_types
+        ):
+            continue  # charged as the checklist requirement it is about
         needed = dependencies.get(finding["code"]) or ()
         if needed and not (set(needed) & present_types):
             continue  # the consequence of a document the claim does not have, already charged

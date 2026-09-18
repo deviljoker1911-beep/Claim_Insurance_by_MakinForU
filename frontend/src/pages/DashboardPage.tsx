@@ -230,6 +230,11 @@ function ClaimsTable({ claims }: { claims: DashboardClaim[] }) {
                       Approved
                     </Badge>
                   )}
+                  {claim.review_state === 'superseded' && (
+                    <Badge tone="warning" title="The claim changed after it was approved">
+                      Approval superseded
+                    </Badge>
+                  )}
                 </span>
               </td>
               <td className="px-5 py-3 text-xs whitespace-nowrap text-slate-500">

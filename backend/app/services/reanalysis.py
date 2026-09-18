@@ -22,6 +22,7 @@ from app.reanalysis import summary as change_model
 from app.services import analysis as analysis_service
 from app.services import canonical as canonical_service
 from app.services import questions as question_service
+from app.services import review as review_service
 from app.services import validation as validation_service
 
 logger = logging.getLogger("claimai.reanalysis")
@@ -110,6 +111,9 @@ def _run_locked(
     session.commit()
 
     state, _ = canonical_service.refresh(session, claim)
+    # An approval given to the claim as it was does not carry over to the claim as it is now.
+    if review_service.refresh_approval(session, claim, state, state["readiness"]):
+        state, _ = canonical_service.refresh(session, claim)
     questions = question_service.questions_for(session, claim.id)
     after_state = change_model.state_summary(state, questions)
     changes = change_model.diff(before_state, after_state)

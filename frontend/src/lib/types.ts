@@ -845,12 +845,16 @@ export interface ReadinessSection {
 }
 
 export interface ReviewSection {
-  state: 'draft' | 'approved'
+  state: 'draft' | 'approved' | 'superseded'
   approved: boolean
+  /** The claim changed after it was approved, so the approval no longer stands for it. */
+  superseded: boolean
   approved_by: string | null
   approved_at: string | null
   approval_note: string | null
   review_started_at: string | null
+  superseded_at: string | null
+  approved_readiness: { score?: number; status?: string; deducted?: number; counted_findings?: number }
   can_approve: boolean
 }
 
@@ -893,9 +897,10 @@ export interface DashboardClaim {
   readiness_score: number
   readiness_status: ReadinessStatus
   readiness_status_label: string
-  review_state: 'draft' | 'approved'
+  review_state: 'draft' | 'approved' | 'superseded'
   approved_by: string | null
   approved_at: string | null
+  superseded_at: string | null
   status: string
   is_demo: boolean
   created_at: string

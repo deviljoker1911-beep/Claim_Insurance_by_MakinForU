@@ -1,4 +1,13 @@
-import { BadgeCheck, ChevronDown, CircleAlert, CircleCheck, Loader2, ShieldCheck, TriangleAlert } from 'lucide-react'
+import {
+  BadgeCheck,
+  ChevronDown,
+  CircleAlert,
+  CircleCheck,
+  History,
+  Loader2,
+  ShieldCheck,
+  TriangleAlert,
+} from 'lucide-react'
 import { useState, type ComponentType } from 'react'
 
 import { errorMessage } from '../../lib/api'
@@ -44,7 +53,36 @@ export function ReadinessCard({ readiness, claimId }: { readiness: ReadinessResp
         </div>
 
         <div className="flex flex-col items-end gap-2">
-          {review.approved ? (
+          {review.superseded ? (
+            <div className="text-right" data-testid="superseded-stamp">
+              <Badge tone="warning">
+                <History className="size-3.5" />
+                Approval superseded
+              </Badge>
+              <p className="mt-1 max-w-xs text-xs text-slate-500">
+                {review.approved_by} approved this claim at {review.approved_readiness.score}% on{' '}
+                {formatDateTime(review.approved_at)}. It has changed since, so that approval no longer stands for it.
+              </p>
+              <Button
+                className="mt-2"
+                size="sm"
+                data-testid="approve-claim"
+                disabled={!review.can_approve || approve.isPending}
+                title={
+                  review.can_approve
+                    ? 'Record that you have reviewed the claim as it stands now'
+                    : 'Available once the documentation is ready for review again'
+                }
+                onClick={() => {
+                  setError(null)
+                  approve.mutate(undefined, { onError: (problem) => setError(errorMessage(problem)) })
+                }}
+              >
+                {approve.isPending ? <Loader2 className="size-4 animate-spin" /> : <ShieldCheck className="size-4" />}
+                Approve again
+              </Button>
+            </div>
+          ) : review.approved ? (
             <div className="text-right" data-testid="approved-stamp">
               <Badge tone="success">
                 <BadgeCheck className="size-3.5" />

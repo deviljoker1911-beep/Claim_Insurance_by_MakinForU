@@ -564,10 +564,14 @@ def build_claim_state(session: Session, claim: Claim) -> dict:
     state["review"] = {
         "state": claim.review_state,
         "approved": claim.review_state == "approved",
+        "superseded": claim.review_state == "superseded",
         "approved_by": claim.approved_by,
         "approved_at": _iso(claim.approved_at),
         "approval_note": claim.approval_note,
         "review_started_at": _iso(claim.review_started_at),
+        "superseded_at": _iso(claim.superseded_at),
+        "approved_readiness": dict(claim.approved_readiness or {}),
+        # An approval speaks for the claim it was given to; a superseded one no longer does.
         "can_approve": claim.review_state != "approved"
         and readiness_engine.can_be_approved(state["readiness"]),
     }

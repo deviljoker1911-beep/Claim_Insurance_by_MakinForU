@@ -62,6 +62,10 @@ class Claim(Base):
     approval_note: Mapped[str | None] = mapped_column(String(500))
     # What the documentation looked like when it was approved, kept as it was.
     approved_readiness: Mapped[dict] = mapped_column(JSONType, default=dict)
+    # The documents as they stood when it was approved. An approval speaks for the claim it
+    # was given to; when that claim changes, the approval is superseded rather than carried on.
+    approved_input_fingerprint: Mapped[str | None] = mapped_column(String(64))
+    superseded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_by: Mapped[str] = mapped_column(String(120))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
@@ -411,7 +415,10 @@ FINDING_ACTIVE_STATUSES = (FINDING_OPEN, FINDING_REOPENED)
 
 REVIEW_DRAFT = "draft"
 REVIEW_APPROVED = "approved"
-REVIEW_STATES = (REVIEW_DRAFT, REVIEW_APPROVED)
+# The claim changed after it was approved: the earlier approval is on the record but no longer
+# speaks for the claim as it now stands.
+REVIEW_SUPERSEDED = "superseded"
+REVIEW_STATES = (REVIEW_DRAFT, REVIEW_APPROVED, REVIEW_SUPERSEDED)
 
 QUESTION_OPEN = "open"
 QUESTION_ANSWERED = "answered"

@@ -1016,12 +1016,17 @@ class ReadinessSectionOut(BaseModel):
 
 
 class ReviewSectionOut(BaseModel):
-    state: Literal["draft", "approved"]
+    state: Literal["draft", "approved", "superseded"]
     approved: bool = False
+    # The claim changed after it was approved: the approval is on the record, and no longer
+    # stands for the claim as it is now.
+    superseded: bool = False
     approved_by: str | None = None
     approved_at: UTCDateTime | None = None
     approval_note: str | None = None
     review_started_at: UTCDateTime | None = None
+    superseded_at: UTCDateTime | None = None
+    approved_readiness: dict[str, Any] = {}
     can_approve: bool = False
 
 
@@ -1072,6 +1077,7 @@ class DashboardClaimOut(BaseModel):
     review_state: str
     approved_by: str | None = None
     approved_at: UTCDateTime | None = None
+    superseded_at: UTCDateTime | None = None
     status: str
     is_demo: bool
     created_at: UTCDateTime

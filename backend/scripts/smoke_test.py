@@ -604,6 +604,32 @@ def main() -> int:
         "audit event recorded: human_approval, by the operator who clicked it",
     )
 
+    # An approval speaks for the claim it was given to. Change the claim and it is superseded.
+    status, findings_after = call(base, "GET", f"/api/claims/{second['id']}/findings")
+    acknowledged = next(item for item in findings_after["items"] if item["status"] == "acknowledged")
+    post_json(base, f"/api/findings/{acknowledged['id']}/action", {"action": "reopen", "note": "Not confirmed yet."})
+    status, superseded = call(base, "GET", f"/api/claims/{second['id']}/readiness")
+    check(
+        superseded["review"]["state"] == "superseded" and superseded["review"]["approved"] is False,
+        f"changing the claim supersedes the approval ({superseded['score']}% {superseded['status']})",
+    )
+    check(
+        superseded["review"]["approved_by"] == "Demo Operator"
+        and superseded["review"]["approved_readiness"]["score"] == 100,
+        "the record of what was approved, and by whom, is kept",
+    )
+    status, audit_after = call(base, "GET", f"/api/claims/{second['id']}/audit")
+    check(
+        len([e for e in audit_after if e["event_type"] == "human_approval_superseded"]) == 1,
+        "audit event recorded: human_approval_superseded",
+    )
+    post_json(base, f"/api/findings/{acknowledged['id']}/action", {"action": "acknowledge", "note": "Confirmed."})
+    status, reapproved = post_json(base, f"/api/claims/{second['id']}/review/approve", {"note": "Re-checked."})
+    check(
+        status == 200 and reapproved["review"]["approved"] is True,
+        "a superseded claim can be approved again once it is ready",
+    )
+
     status, dash = call(base, "GET", "/api/dashboard")
     check(status == 200 and dash["totals"]["claims"] == 2, f"dashboard counts the claims: {dash['totals']}")
     check(
@@ -642,9 +668,9 @@ def main() -> int:
                 "document_uploaded": 36,
                 "document_processed": 36,
                 "demo_pack_attached": 3,
-                # Three in the lifecycle section, and one for each finding acknowledged before
-                # the claim was approved.
-                "finding_action": 3 + len(to_deal_with),
+                # Three in the lifecycle section, one for each finding acknowledged before the
+                # claim was approved, and the reopen and acknowledge that superseded it.
+                "finding_action": 3 + len(to_deal_with) + 2,
                 "document_excluded": 1,
                 "question_answered": 2,
                 "document_requested": 1,
@@ -665,6 +691,7 @@ def main() -> int:
                 "reanalysis_completed",
                 "human_review_started",
                 "human_approval",
+                "human_approval_superseded",
             ):
                 check(counts.get(name, 0) >= 1, f"audit event recorded {counts.get(name, 0)} time(s): {name}")
             unexpected = set(counts) - set(fixed) - {
@@ -678,6 +705,7 @@ def main() -> int:
                 "workspace_initialized",
                 "human_review_started",
                 "human_approval",
+                "human_approval_superseded",
             }
             check(not unexpected, f"no unexpected audit event types: {sorted(unexpected) or 'none'}")
             check(validation_runs >= 2, f"validation ran for both claims ({validation_runs} runs recorded)")

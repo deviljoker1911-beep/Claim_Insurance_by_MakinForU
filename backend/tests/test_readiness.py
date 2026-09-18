@@ -32,7 +32,7 @@ def requirement(key, status, *, required=True, label=None, findings=(), severity
     }
 
 
-def finding(code, severity, *, status="open", identifier=None, title=None):
+def finding(code, severity, *, status="open", identifier=None, title=None, subject=None):
     return {
         "id": identifier or f"f-{code}-{severity}",
         "code": code,
@@ -41,6 +41,7 @@ def finding(code, severity, *, status="open", identifier=None, title=None):
         "status": status,
         "title": title or f"{code} on this claim",
         "action": "Look at it",
+        "subject": subject or f"{code.lower()}:subject",
         "is_active": status in ("open", "reopened"),
     }
 
@@ -202,7 +203,12 @@ def test_a_claim_with_nothing_read_is_not_ready_for_anything():
 
 def test_a_missing_document_is_not_charged_twice():
     """The requirement is charged; the finding the rule raises about it is not charged again."""
-    missing = finding("MISSING_REQUIRED_DOCUMENT", "critical", title="Operative note is missing")
+    missing = finding(
+        "MISSING_REQUIRED_DOCUMENT",
+        "critical",
+        title="Operative note is missing",
+        subject="requirement:operative_note",
+    )
     result = score(
         checklist=[requirement("operative_note", "missing", findings=[missing])],
         findings=[missing],
@@ -210,6 +216,24 @@ def test_a_missing_document_is_not_charged_twice():
     assert result["score"] == 88, "12 for the missing document, and nothing for the finding about it"
     assert [d["source"]["kind"] for d in result["breakdown"]["deductions"]] == ["requirement"]
     assert result["summary"]["counted_findings"] == 0
+
+
+def test_a_required_document_no_checklist_requirement_covers_is_still_charged():
+    """The rules require an admission record; no checklist requirement covers one.
+
+    Skipping the finding because "the requirement charges it" would mean nothing charged it at
+    all, and the claim would read as ready with a required document missing.
+    """
+    missing = finding(
+        "MISSING_REQUIRED_DOCUMENT",
+        "critical",
+        title="Admission record is missing",
+        subject="requirement:admission_record",
+    )
+    result = score(checklist=[requirement("consent", "found")], findings=[missing])
+    assert result["score"] == 92
+    assert [d["source"]["kind"] for d in result["breakdown"]["deductions"]] == ["finding"]
+    assert result["status"] == engine.NEEDS_ATTENTION
 
 
 def test_a_finding_that_needs_a_missing_document_is_not_charged_on_top_of_it():
