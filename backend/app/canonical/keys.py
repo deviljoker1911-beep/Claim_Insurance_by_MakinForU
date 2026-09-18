@@ -111,10 +111,7 @@ SECTIONS: tuple[str, ...] = (
 
 # Sections whose engines arrive in later phases. They are present and empty, with a note,
 # so the shape of the canonical claim never changes underneath the interface.
-PENDING_SECTIONS: dict[str, str] = {
-    "questions": "Operator questions are built in phase 7.",
-    "resolutions": "Question resolutions are built in phase 7.",
-}
+PENDING_SECTIONS: dict[str, str] = {}
 
 INVESTIGATION_DOC_TYPES = ("lab_report", "investigation_report")
 

@@ -525,10 +525,9 @@ def test_the_canonical_claim_carries_the_findings_summary(client, staged):
     assert section["by_severity"] == findings["summary"]["by_severity"]
     assert section["active"] == findings["summary"]["active"]
     assert {item["id"] for item in section["items"]} == {item["id"] for item in findings["items"]}
-    # The sections whose engines come later stay empty.
-    for pending in ("questions", "resolutions"):
-        assert state[pending]["available"] is False
-        assert state[pending]["items"] == []
+    # Every section of the canonical claim now has an engine behind it.
+    for section in ("checklist", "questions", "resolutions"):
+        assert state[section]["available"] is True
 
 
 def test_validation_is_recorded_in_the_audit_trail_and_the_database(client, staged):

@@ -727,6 +727,8 @@ class ChecklistItemOut(BaseModel):
     severity: Literal["critical", "review", "warning", "info"]
     applies_when: str
     resolution: str
+    question: str
+    why: str
     status: Literal["found", "missing", "review_required", "not_applicable"]
     detail: str
     evidence: list[ChecklistEvidenceOut] = []
@@ -775,6 +777,197 @@ class ChecklistResponse(ChecklistSectionOut):
     claim_number: str
 
 
+# --- Questions, re-analysis and the assistant (phase 7) -----------------------------------
+
+
+class CanonicalQuestionItemOut(BaseModel):
+    id: str
+    requirement_key: str
+    requirement_label: str
+    question: str
+    reason: str
+    status: str
+    severity: str
+    expected_document_type: str
+    resolved_document_id: str | None = None
+    created_at: UTCDateTime | None = None
+    updated_at: UTCDateTime | None = None
+
+
+class CanonicalQuestionsSectionOut(BaseModel):
+    available: bool
+    count: int
+    open: int = 0
+    by_status: dict[str, int] = {}
+    items: list[CanonicalQuestionItemOut] = []
+
+
+class CanonicalResolutionItemOut(BaseModel):
+    question_id: str
+    requirement_key: str
+    requirement_label: str
+    answer: str | None = None
+    reason: str | None = None
+    status: str
+    actor: str | None = None
+    answered_at: UTCDateTime | None = None
+    resolved_document_id: str | None = None
+    resolved_at: UTCDateTime | None = None
+
+
+class CanonicalResolutionsSectionOut(BaseModel):
+    available: bool
+    count: int
+    items: list[CanonicalResolutionItemOut] = []
+
+
+class QuestionUploadOut(BaseModel):
+    """What was offered for a question and whether it answered it."""
+
+    document_id: str
+    document_name: str
+    doc_type: str | None = None
+    doc_type_label: str | None = None
+    expected_document_types: list[str] = []
+    satisfies: bool
+    message: str
+    checked_at: str | None = None
+
+
+class QuestionOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    claim_id: str
+    requirement_key: str
+    requirement_label: str
+    procedure_key: str | None = None
+    question: str
+    reason: str
+    status: Literal["open", "answered", "resolved", "documented_unavailable", "not_applicable"]
+    severity: str
+    expected_document_type: str
+    expected_document_types: list[str] = []
+    answer: str | None = None
+    answer_reason: str | None = None
+    answered_at: UTCDateTime | None = None
+    answered_by: str | None = None
+    resolved_document_id: str | None = None
+    resolved_at: UTCDateTime | None = None
+    last_upload: QuestionUploadOut | None = None
+    created_at: UTCDateTime
+    updated_at: UTCDateTime
+    actions_available: list[str] = []
+
+    @field_validator("last_upload", mode="before")
+    @classmethod
+    def _no_upload_yet(cls, value):
+        """Nothing has been offered for this question yet."""
+        return value or None
+
+
+class QuestionsResponse(BaseModel):
+    claim_id: str
+    claim_number: str
+    count: int
+    summary: dict[str, Any] = {}
+    items: list[QuestionOut] = []
+
+
+class QuestionAnswerRequest(BaseModel):
+    answer: Literal["yes_have_it", "not_available", "not_applicable"]
+    reason: str | None = Field(default=None, max_length=500)
+
+    @field_validator("reason")
+    @classmethod
+    def _clean_reason(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        value = value.strip()
+        if any(ord(char) < 32 or ord(char) == 127 for char in value):
+            raise ValueError("must not contain control characters")
+        return value or None
+
+
+class QuestionAnswerResult(BaseModel):
+    question: QuestionOut
+    # Present for "yes, I have it": where to send the document that answers the question.
+    upload: dict[str, Any] | None = None
+
+
+class ChangeOut(BaseModel):
+    kind: Literal["document", "finding", "checklist", "canonical", "question", "procedure"]
+    key: str
+    label: str
+    before: Any = None
+    after: Any = None
+    headline: str
+    severity: str | None = None
+    code: str | None = None
+    document_id: str | None = None
+    finding_id: str | None = None
+    question_id: str | None = None
+    requirement: str | None = None
+
+
+class ReanalysisRunOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    claim_id: str
+    sequence: int
+    trigger: str
+    summary: dict[str, Any] = {}
+    changes: list[ChangeOut] = []
+    documents_added: list[dict[str, Any]] = []
+    started_at: UTCDateTime
+    completed_at: UTCDateTime | None = None
+    duration_ms: int | None = None
+
+
+class ReanalysisResponse(BaseModel):
+    claim_id: str
+    claim_number: str
+    latest: ReanalysisRunOut | None = None
+    history: list[ReanalysisRunOut] = []
+
+
+class AssistantCitationOut(BaseModel):
+    kind: Literal["finding", "document", "requirement", "question", "claim"]
+    id: str
+    label: str
+    detail: str | None = None
+    document_id: str | None = None
+    page: int | None = None
+
+
+class AssistantAskRequest(BaseModel):
+    question: str = Field(min_length=1, max_length=500)
+
+    @field_validator("question")
+    @classmethod
+    def _clean_question(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("must not be empty")
+        if any(ord(char) < 32 or ord(char) == 127 for char in value):
+            raise ValueError("must not contain control characters")
+        return value
+
+
+class AssistantAnswerOut(BaseModel):
+    claim_id: str
+    claim_number: str
+    question: str
+    intent: str
+    answer: str
+    citations: list[AssistantCitationOut] = []
+    suggested_questions: list[str] = []
+    provider: dict[str, Any] = {}
+    notice: str
+    removed_citations: list[str] = []
+
+
 class ClaimStateOut(BaseModel):
     """The canonical claim: one structured claim assembled from the documents."""
 
@@ -790,8 +983,8 @@ class ClaimStateOut(BaseModel):
     bills: BillsSectionOut
     checklist: ChecklistSectionOut
     findings: CanonicalFindingsSectionOut
-    questions: PendingSectionOut
-    resolutions: PendingSectionOut
+    questions: CanonicalQuestionsSectionOut
+    resolutions: CanonicalResolutionsSectionOut
     audit_events: AuditEventsSectionOut
     snapshot: SnapshotOut
 

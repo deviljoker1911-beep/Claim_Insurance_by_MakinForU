@@ -262,3 +262,17 @@ def test_reset_waits_for_an_upload_in_progress(client, claim, monkeypatch):
     assert reset_result["deleted"]["documents"] == 3
     assert client.get("/api/claims").json() == []
     assert not claims_root().exists() or not any(claims_root().iterdir())
+
+
+def test_every_table_that_belongs_to_a_claim_is_rebuilt_with_the_workspace():
+    """A table missing from WORKSPACE_MODELS is not rebuilt, and blocks the next rebuild.
+
+    PostgreSQL refuses to drop `claims` while a table outside the list still references it, so
+    a model added without being registered here breaks the next schema change.
+    """
+    from app.models import WORKSPACE_MODELS, Base
+
+    listed = {model.__table__.name for model in WORKSPACE_MODELS}
+    for table in Base.metadata.tables.values():
+        if any(foreign_key.column.table.name == "claims" for foreign_key in table.foreign_keys):
+            assert table.name in listed, f"{table.name} references claims but is not a workspace table"

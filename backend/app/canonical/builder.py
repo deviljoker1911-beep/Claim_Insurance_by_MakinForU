@@ -29,14 +29,16 @@ from app.canonical.selection import (
 )
 from app.config_files import canonical_config
 from app.models import (
-    FINDING_ACTIVE_STATUSES,
-    SEVERITIES,
     AuditEvent,
     Claim,
     Document,
     DocumentBill,
     ExtractedField,
+    FINDING_ACTIVE_STATUSES,
     Finding,
+    QUESTION_PENDING_STATUSES,
+    Question,
+    SEVERITIES,
 )
 from app.services import analysis as analysis_service
 
@@ -395,6 +397,59 @@ def _finding_refs(findings: list[Finding]) -> list[dict]:
     ]
 
 
+def _questions_section(questions: list[Question]) -> dict:
+    """The requests made to the operator and where each one stands."""
+    by_status: dict[str, int] = {}
+    for question in questions:
+        by_status[question.status] = by_status.get(question.status, 0) + 1
+    return {
+        "available": True,
+        "count": len(questions),
+        "open": sum(1 for question in questions if question.status in QUESTION_PENDING_STATUSES),
+        "by_status": dict(sorted(by_status.items())),
+        "items": [
+            {
+                "id": question.id,
+                "requirement_key": question.requirement_key,
+                "requirement_label": question.requirement_label,
+                "question": question.question,
+                "reason": question.reason,
+                "status": question.status,
+                "severity": question.severity,
+                "expected_document_type": question.expected_document_type,
+                "resolved_document_id": question.resolved_document_id,
+                "created_at": _iso(question.created_at),
+                "updated_at": _iso(question.updated_at),
+            }
+            for question in questions
+        ],
+    }
+
+
+def _resolutions_section(questions: list[Question]) -> dict:
+    """What a person answered, kept as they gave it."""
+    answered = [question for question in questions if question.answer or question.answer_reason]
+    return {
+        "available": True,
+        "count": len(answered),
+        "items": [
+            {
+                "question_id": question.id,
+                "requirement_key": question.requirement_key,
+                "requirement_label": question.requirement_label,
+                "answer": question.answer,
+                "reason": question.answer_reason,
+                "status": question.status,
+                "actor": question.answered_by,
+                "answered_at": _iso(question.answered_at),
+                "resolved_document_id": question.resolved_document_id,
+                "resolved_at": _iso(question.resolved_at),
+            }
+            for question in answered
+        ],
+    }
+
+
 def _audit_events(events: list[AuditEvent]) -> dict:
     limit = int(canonical_config().get("max_audit_events", 100))
     tail = events[-limit:]
@@ -435,6 +490,11 @@ def build_claim_state(session: Session, claim: Claim) -> dict:
         session.scalars(select(AuditEvent).where(AuditEvent.claim_id == claim.id).order_by(AuditEvent.id)).all()
     )
     findings = list(session.scalars(select(Finding).where(Finding.claim_id == claim.id)).all())
+    questions = list(
+        session.scalars(
+            select(Question).where(Question.claim_id == claim.id).order_by(Question.created_at, Question.requirement_key)
+        ).all()
+    )
 
     counts = {status: 0 for status in ("pending", "queued", "processing", "processed", "failed")}
     for document in documents:
@@ -489,6 +549,8 @@ def build_claim_state(session: Session, claim: Claim) -> dict:
         "documents": _documents_section(documents, fields),
         "bills": _bills(bills, fields, by_id),
         "findings": _findings_section(findings),
+        "questions": _questions_section(questions),
+        "resolutions": _resolutions_section(questions),
         "audit_events": _audit_events(events),
     }
     # The checklist reads the sections above, so it is built once they are all there.

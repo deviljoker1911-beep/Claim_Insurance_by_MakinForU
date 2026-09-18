@@ -82,6 +82,11 @@ class Document(Base):
     uploaded_by: Mapped[str] = mapped_column(String(120))
     uploaded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
+    # --- questions (phase 7) ---
+    # Set when the document was uploaded in answer to a question, so the audit trail can show
+    # the request and the document that answered it as one story.
+    question_id: Mapped[str | None] = mapped_column(String(36), index=True)
+
     # --- validation (phase 5) ---
     # Set when a duplicate copy is excluded from the claim; an excluded document stops
     # supplying values to the canonical claim.
@@ -296,6 +301,62 @@ class ValidationRun(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
 
+class Question(Base):
+    """A request to the operator for a document the claim needs.
+
+    One question per checklist requirement of a claim: asking again about the same requirement
+    updates the question that is already there rather than adding another.
+    """
+
+    __tablename__ = "questions"
+    __table_args__ = (UniqueConstraint("claim_id", "requirement_key", name="uq_question_requirement"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    claim_id: Mapped[str] = mapped_column(ForeignKey("claims.id", ondelete="CASCADE"), index=True)
+    requirement_key: Mapped[str] = mapped_column(String(64), index=True)
+    requirement_label: Mapped[str] = mapped_column(String(120))
+    procedure_key: Mapped[str | None] = mapped_column(String(64))
+    question: Mapped[str] = mapped_column(String(500))
+    reason: Mapped[str] = mapped_column(String(500))
+    expected_document_type: Mapped[str] = mapped_column(String(48))
+    expected_document_types: Mapped[list] = mapped_column(JSONType, default=list)
+    severity: Mapped[str] = mapped_column(String(16), default="review")
+
+    status: Mapped[str] = mapped_column(String(32), default="open", index=True)
+    answer: Mapped[str | None] = mapped_column(String(32))
+    answer_reason: Mapped[str | None] = mapped_column(String(500))
+    answered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    answered_by: Mapped[str | None] = mapped_column(String(120))
+    # The document that answered the question, and what was said about the last one offered.
+    resolved_document_id: Mapped[str | None] = mapped_column(String(36))
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_upload: Mapped[dict] = mapped_column(JSONType, default=dict)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+
+class ReanalysisRun(Base):
+    """What one pass of analysis changed, as a comparison of two structured states."""
+
+    __tablename__ = "reanalysis_runs"
+    # One pass per sequence number: two writers cannot both record "pass 4" of a claim.
+    __table_args__ = (UniqueConstraint("claim_id", "sequence", name="uq_reanalysis_sequence"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    claim_id: Mapped[str] = mapped_column(ForeignKey("claims.id", ondelete="CASCADE"), index=True)
+    sequence: Mapped[int] = mapped_column(Integer, default=1)
+    trigger: Mapped[str] = mapped_column(String(32), default="analysis")
+    before_state: Mapped[dict] = mapped_column(JSONType, default=dict)
+    after_state: Mapped[dict] = mapped_column(JSONType, default=dict)
+    changes: Mapped[list] = mapped_column(JSONType, default=list)
+    summary: Mapped[dict] = mapped_column(JSONType, default=dict)
+    documents_added: Mapped[list] = mapped_column(JSONType, default=list)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    duration_ms: Mapped[int | None] = mapped_column(Integer)
+
+
 class AuditEvent(Base):
     __tablename__ = "audit_events"
 
@@ -309,6 +370,8 @@ class AuditEvent(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
 
 
+# Everything the workspace holds for a claim. A table that belongs to a claim and is missing
+# here is neither rebuilt nor dropped with the rest, so the list is checked by a test.
 WORKSPACE_MODELS = (
     ClaimCounter,
     Claim,
@@ -319,6 +382,8 @@ WORKSPACE_MODELS = (
     ClaimState,
     Finding,
     ValidationRun,
+    Question,
+    ReanalysisRun,
     AuditEvent,
 )
 
@@ -333,4 +398,24 @@ FINDING_REOPENED = "reopened"
 FINDING_STATUSES = (FINDING_OPEN, FINDING_RESOLVED, FINDING_ACKNOWLEDGED, FINDING_AUTO_CLOSED, FINDING_REOPENED)
 # Statuses that still need someone to act.
 FINDING_ACTIVE_STATUSES = (FINDING_OPEN, FINDING_REOPENED)
+
+QUESTION_OPEN = "open"
+QUESTION_ANSWERED = "answered"
+QUESTION_RESOLVED = "resolved"
+QUESTION_DOCUMENTED_UNAVAILABLE = "documented_unavailable"
+QUESTION_NOT_APPLICABLE = "not_applicable"
+QUESTION_STATUSES = (
+    QUESTION_OPEN,
+    QUESTION_ANSWERED,
+    QUESTION_RESOLVED,
+    QUESTION_DOCUMENTED_UNAVAILABLE,
+    QUESTION_NOT_APPLICABLE,
+)
+# A question still waiting for something from the operator.
+QUESTION_PENDING_STATUSES = (QUESTION_OPEN, QUESTION_ANSWERED)
+
+ANSWER_YES_HAVE_IT = "yes_have_it"
+ANSWER_NOT_AVAILABLE = "not_available"
+ANSWER_NOT_APPLICABLE = "not_applicable"
+ANSWERS = (ANSWER_YES_HAVE_IT, ANSWER_NOT_AVAILABLE, ANSWER_NOT_APPLICABLE)
 SEVERITIES = ("critical", "review", "warning", "info")

@@ -232,8 +232,8 @@ def main() -> int:
     check("1,000.00" not in json.dumps(state), "covered text never reaches the canonical claim")
     check(state["documents"]["count"] == 18, "document inventory lists all 18 documents")
     check(
-        all(not state[section]["available"] and state[section]["items"] == [] for section in ("questions", "resolutions")),
-        "questions and resolutions are present and empty",
+        all(state[section]["available"] for section in ("checklist", "findings", "questions", "resolutions")),
+        "every section of the canonical claim is built",
     )
 
     print("8. Cross-document validation")
@@ -275,6 +275,7 @@ def main() -> int:
                 raise SmokeFailure(f"{item['code']} evidence does not point at a page")
     check(True, "every finding that claims evidence points at a document and a page")
 
+    call(base, "GET", f"/api/claims/{second['id']}/changes")  # let the re-analysis settle
     status, validated_state = call(base, "GET", f"/api/claims/{second['id']}/state")
     duplicate_states = {item["duplicate_state"] for item in validated_state["documents"]["items"]}
     check(
@@ -287,6 +288,18 @@ def main() -> int:
     )
 
     status, rebuilt = call(base, "GET", f"/api/claims/{second['id']}/state")
+    if rebuilt["snapshot"]["content_sha256"] != validated_state["snapshot"]["content_sha256"]:
+        differing = [
+            key
+            for key in rebuilt
+            if key != "snapshot" and json.dumps(rebuilt[key], sort_keys=True) != json.dumps(validated_state.get(key), sort_keys=True)
+        ]
+        print(f"      sections that differ between two reads: {differing}")
+        for key in differing:
+            before_text = json.dumps(validated_state.get(key), sort_keys=True)
+            after_text = json.dumps(rebuilt[key], sort_keys=True)
+            print(f"      {key} before: {before_text[:400]}")
+            print(f"      {key} after:  {after_text[:400]}")
     check(
         rebuilt["snapshot"]["content_sha256"] == validated_state["snapshot"]["content_sha256"],
         f"rebuilding the canonical claim is deterministic ({rebuilt['snapshot']['content_sha256'][:12]}…)",
@@ -400,14 +413,140 @@ def main() -> int:
     status, again_list = call(base, "GET", f"/api/claims/{first['id']}/checklist")
     check(again_list == staged_list, "reading the checklist twice gives the same answer")
 
-    print(f"12. Database and storage ({dialect})")
+    print("12. Questions, uploading from a question, and the assistant")
+
+    def wait_for_processing(claim_id: str) -> dict:
+        deadline = time.monotonic() + 300
+        while time.monotonic() < deadline:
+            status, processing = call(base, "GET", f"/api/claims/{claim_id}/processing")
+            if processing["state"] in ("completed", "failed"):
+                return processing
+            time.sleep(0.4)
+        raise SystemExit("processing did not finish")
+
+    def questions_of(claim_id: str) -> dict:
+        status, payload = call(base, "GET", f"/api/claims/{claim_id}/questions")
+        assert status == 200, payload
+        return {item["requirement_key"]: item for item in payload["items"]}
+
+    asked = questions_of(first["id"])
+    check(
+        asked.get("operative_note", {}).get("status") == "open"
+        and asked.get("anaesthesia_record", {}).get("status") == "open",
+        "the staged claim asks for the operative note and the anaesthesia record",
+    )
+    check(
+        asked["operative_note"]["question"] == "Do you have the operative note for this admission?",
+        f"the question is grounded: {asked['operative_note']['reason'][:60]}…",
+    )
+
+    operative_question = asked["operative_note"]["id"]
+    status, refused = post_json(base, f"/api/questions/{operative_question}/answer", {"answer": "not_available"})
+    check(status == 422, "an answer of 'not available' without a reason is refused")
+
+    status, requested = post_json(base, f"/api/questions/{operative_question}/answer", {"answer": "yes_have_it"})
+    check(
+        status == 200
+        and requested["question"]["status"] == "answered"
+        and requested["upload"]["expected_document_type"] == "operative_note",
+        "'yes, I have it' asks for the document and keeps the question open",
+    )
+
+    wrong = [entry for entry in initial if entry[0] == "10_Lab_Report.pdf"]
+    body, content_type = multipart([("operative_note_try_1.pdf", wrong[0][1], "application/pdf")])
+    status, _ = call(base, "POST", f"/api/questions/{operative_question}/documents", body=body, content_type=content_type)
+    check(status == 201, "a document can be uploaded against the question itself")
+    wait_for_processing(first["id"])
+    after_wrong = questions_of(first["id"])["operative_note"]
+    check(
+        after_wrong["status"] == "answered"
+        and after_wrong["last_upload"]["satisfies"] is False
+        and after_wrong["last_upload"]["message"] == "Document type does not satisfy this request.",
+        f"a document of the wrong type does not resolve it (read as {after_wrong['last_upload']['doc_type']})",
+    )
+
+    scan = demo_dir / "later" / "scan_0042.pdf"
+    body, content_type = multipart([("scan_0042.pdf", scan.read_bytes(), "application/pdf")])
+    status, uploaded = call(base, "POST", f"/api/questions/{operative_question}/documents", body=body, content_type=content_type)
+    check(status == 201, "the operative note is uploaded against the question")
+    wait_for_processing(first["id"])
+    resolved = questions_of(first["id"])["operative_note"]
+    check(resolved["status"] == "resolved", "the right document resolves the question")
+    check(
+        resolved["resolved_document_id"] == uploaded["documents"][0]["id"],
+        "the question records the document that answered it",
+    )
+
+    status, checklist_now = call(base, "GET", f"/api/claims/{first['id']}/checklist")
+    rows = {item["key"]: item["status"] for item in checklist_now["items"]}
+    check(rows["operative_note"] == "found", "the checklist moved from missing to found")
+    status, findings_now = call(base, "GET", f"/api/claims/{first['id']}/findings")
+    missing_note = [
+        item
+        for item in findings_now["items"]
+        if item["code"] == "MISSING_REQUIRED_DOCUMENT" and item["context"]["requirement"] == "operative_note"
+    ]
+    check([item["status"] for item in missing_note] == ["auto_closed"], "the phase 5 finding closed itself")
+
+    status, change_payload = call(base, "GET", f"/api/claims/{first['id']}/changes")
+    latest = change_payload["latest"]
+    headlines = [change["headline"] for change in latest["changes"]]
+    check(latest["summary"]["documents_added"] >= 1, f"the change summary reports the pass: {latest['summary']}")
+    check(
+        any("scan_0042.pdf added" in headline for headline in headlines)
+        and any("Operative note: missing → found" in headline for headline in headlines),
+        "what changed is reported from the states, not from text",
+    )
+
+    anaesthesia_question = questions_of(first["id"])["anaesthesia_record"]["id"]
+    reason = "The anaesthesia chart is with the theatre records and has been requested."
+    status, unavailable = post_json(
+        base, f"/api/questions/{anaesthesia_question}/answer", {"answer": "not_available", "reason": reason}
+    )
+    check(
+        status == 200 and unavailable["question"]["status"] == "documented_unavailable",
+        "'not available' with a reason is recorded",
+    )
+    status, audit = call(base, "GET", f"/api/claims/{first['id']}/audit")
+    types = [event["event_type"] for event in audit]
+    for event_type in (
+        "question_generated",
+        "question_answered",
+        "document_requested",
+        "document_uploaded_for_question",
+        "question_resolved",
+        "question_marked_unavailable",
+        "reanalysis_started",
+        "reanalysis_completed",
+    ):
+        check(event_type in types, f"audit event recorded: {event_type}")
+
+    status, provider = call(base, "GET", "/api/assistant/provider")
+    check(
+        provider["name"] == "demo" and provider["mode"] == "offline-deterministic",
+        f"the assistant answers offline: {provider['name']} · {provider['model']}",
+    )
+    status, answer = post_json(base, f"/api/claims/{first['id']}/assistant", {"question": "What documents are missing?"})
+    check(status == 200 and answer["intent"] == "missing_documents", "the assistant answers about missing documents")
+    check(bool(answer["citations"]), f"the answer cites {len(answer['citations'])} source(s) from this claim")
+    banned = [word for word in ("fraud", "forged", "fake") if word in answer["answer"].lower()]
+    check(not banned, "the assistant never accuses")
+    status, ready = post_json(
+        base, f"/api/claims/{first['id']}/assistant", {"question": "Is this claim ready for submission?"}
+    )
+    check(
+        "ready for submission" not in ready["answer"].lower() and "approved" not in ready["answer"].lower(),
+        "the assistant does not say a claim is ready or approved",
+    )
+
+    print(f"13. Database and storage ({dialect})")
     engine = make_engine(settings.database_url)
     try:
         with Session(engine) as session:
             numbers = sorted(session.scalars(select(Claim.claim_number)))
             check(numbers == ["CLM-2026-00123", "CLM-2026-00124"], f"claims persisted: {numbers}")
             documents = list(session.scalars(select(Document)))
-            check(len(documents) == 34, "34 document rows persisted")
+            check(len(documents) == 36, "36 document rows persisted (34 demo files, 2 answering a question)")
             check({d.source for d in documents} == {"upload", "demo_pack"}, "upload sources recorded")
             for document in documents:
                 path = settings.storage_dir / document.storage_path
@@ -415,26 +554,48 @@ def main() -> int:
                     raise SmokeFailure(f"{path} is not read-only")
                 if hashlib.sha256(path.read_bytes()).hexdigest() != document.sha256:
                     raise SmokeFailure(f"{path} does not match its recorded SHA-256")
-            check(True, "all 34 stored originals are read-only (0444) and match their SHA-256")
+            check(True, "all 36 stored originals are read-only (0444) and match their SHA-256")
             counts = dict(session.execute(select(AuditEvent.event_type, func.count()).group_by(AuditEvent.event_type)).all())
-            # Validation runs whenever the documents change, so its count depends on timing;
-            # everything else is fixed by what this script did.
             validation_runs = counts.pop("validation_completed", 0)
-            check(
-                counts
-                == {
-                    "demo_reset": 1,
-                    "claim_created": 2,
-                    "document_uploaded": 34,
-                    "demo_pack_attached": 3,
-                    "claim_analysis_started": 2,
-                    "document_processed": 34,
-                    "claim_analysis_completed": 2,
-                    "finding_action": 3,
-                    "document_excluded": 1,
-                },
-                f"audit events: {counts}",
-            )
+            # Counted exactly: these are the actions this script performed.
+            fixed = {
+                "demo_reset": 1,
+                "claim_created": 2,
+                "document_uploaded": 36,
+                "document_processed": 36,
+                "demo_pack_attached": 3,
+                "finding_action": 3,
+                "document_excluded": 1,
+                "question_answered": 2,
+                "document_requested": 1,
+                "document_uploaded_for_question": 2,
+                "question_upload_did_not_match": 1,
+                "question_marked_unavailable": 1,
+            }
+            wrong = {name: (counts.get(name), total) for name, total in fixed.items() if counts.get(name) != total}
+            check(not wrong, f"audit events counted exactly: {wrong or fixed}")
+            # Counted as "at least once": how often analysis and re-analysis run depends on how
+            # the documents arrived, and how many questions were asked on what was missing.
+            for name in (
+                "claim_analysis_started",
+                "claim_analysis_completed",
+                "question_generated",
+                "question_resolved",
+                "reanalysis_started",
+                "reanalysis_completed",
+            ):
+                check(counts.get(name, 0) >= 1, f"audit event recorded {counts.get(name, 0)} time(s): {name}")
+            unexpected = set(counts) - set(fixed) - {
+                "claim_analysis_started",
+                "claim_analysis_completed",
+                "question_generated",
+                "question_resolved",
+                "reanalysis_started",
+                "reanalysis_completed",
+                "question_marked_not_applicable",
+                "workspace_initialized",
+            }
+            check(not unexpected, f"no unexpected audit event types: {sorted(unexpected) or 'none'}")
             check(validation_runs >= 2, f"validation ran for both claims ({validation_runs} runs recorded)")
             pages = session.scalar(
                 select(func.count()).select_from(DocumentPage).where(DocumentPage.claim_id == second["id"])

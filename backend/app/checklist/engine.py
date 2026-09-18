@@ -275,6 +275,9 @@ def _evaluate(
         "severity": requirement["severity"],
         "applies_when": requirement.get("applies_when", ALWAYS),
         "resolution": requirement["resolution"],
+        # What to ask the operator for this requirement, and why it is being asked (phase 7).
+        "question": requirement["question"],
+        "why": requirement["why"],
         "status": MISSING,
         "detail": "",
         "evidence": [],

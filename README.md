@@ -34,8 +34,8 @@ Document upload → OCR → Classification → Extraction → Claim structuring
 | 4 | Canonical claim model and evidence viewer | ✅ Done |
 | 5 | Cross-document validation and findings | ✅ Done |
 | 6 | Procedure detection and procedure checklist engine | ✅ Done |
-| 7 | Interactive questions, upload and incremental re-analysis | ⏳ Next |
-| 8 | Readiness engine and dashboard | ⏳ |
+| 7 | Interactive questions, grounded assistant and incremental re-analysis | ✅ Done |
+| 8 | Readiness engine and dashboard | ⏳ Next |
 | 9 | Final report (PDF / Excel) and audit trail | ⏳ |
 | 10 | UI polish and demo experience | ⏳ |
 
@@ -122,9 +122,8 @@ Text that a document hides behind opaque paint is detected, reported separately 
 ### The canonical claim
 
 The extracted values are assembled into one structured claim: patient, admission, diagnosis,
-procedures, doctors, investigations, documents, bills, findings and the procedure checklist,
-plus the sections whose engines arrive later (questions, resolutions) — present, empty and
-labelled.
+procedures, doctors, investigations, documents, bills, findings, the procedure checklist, the
+questions it raised and the answers recorded against them.
 
 Where several documents carry the same value they are compared in a normalised form (names
 without honorifics, dates as calendar dates, identifiers without punctuation, amounts
@@ -194,6 +193,55 @@ findings the rules raised against the requirement they belong to. A requirement 
 a document as a whole, so it cites the document and no page — page-level evidence belongs to the
 values read from it.
 
+### Questions, uploads and re-analysis
+
+Where the checklist says a required document is missing, the claim asks for it. One question
+per requirement, worded from that requirement's own template and given a reason taken from the
+claim: *"The documents record an operation, and the surgeon's note of it is not among them."*
+Nothing is invented, and nothing is asked about a requirement the claim already meets.
+
+| Answer | What happens |
+|--------|--------------|
+| Yes, I have it | The question stays open and asks for the document; it closes only when the claim holds one of the expected type |
+| Not available | A reason is required, and the question is recorded as documented unavailable |
+| Not applicable | A reason is required, and the question is recorded as not applicable |
+
+A document uploaded from a question keeps the question on its record, so the audit trail runs
+from the request to the document that answered it. A document that classifies as something
+else does not resolve the request: the question stays open and reports what was read instead —
+*"Document type does not satisfy this request."* — with the type the classifier gave it.
+
+Processing a new document re-runs what already exists: the canonical claim, the rules, the
+checklist and the questions, in that order. The difference between the claim as it was and as
+it is now is recorded as one pass, compared **state to state** rather than by reading text, and
+a pass only ever describes a settled claim:
+
+```
+scan_0042.pdf added and read as operative note
+Billed implant is not corroborated by an operative document: open → closed automatically
+Operative note is missing: open → closed automatically
+Operative note: missing → found
+Operative note question: answered → resolved
+```
+
+The finding lifecycle is the one from phase 5 — answering a question never closes a finding;
+the rules do that when they stop raising it.
+
+### The assistant
+
+The assistant answers about one claim from that claim: its documents, findings, checklist,
+questions and last re-analysis. With no API key configured it answers through a deterministic
+demo provider that writes from the claim itself — it is not a language model and is not
+presented as one. Configure `LLM_PROVIDER` with a key and the same grounded context goes to
+Anthropic or to an OpenAI-compatible endpoint instead; a provider without its key never
+answers, the demo provider does and says so.
+
+Every answer passes the same guard whichever provider wrote it: citations are resolved against
+this claim and dropped when they point at nothing, and a sentence that claims something the
+system may not conclude — approval, readiness for submission, medical necessity, a diagnosis,
+or any accusation — is removed before the answer is served. What survives is shown with its
+sources as chips a reviewer can open.
+
 ## API
 
 | Endpoint | Description |
@@ -216,6 +264,12 @@ values read from it.
 | `GET /api/claims/{id}/findings[?status=&severity=]` | Findings with their evidence, status and the actions that apply |
 | `GET /api/claims/{id}/checks` | Every check that ran: passed, finding raised, waiting or not applicable |
 | `GET /api/claims/{id}/checklist` | The detected procedure and its checklist: each requirement found, missing, review required or not applicable, with the documents that satisfy it |
+| `GET /api/claims/{id}/questions` | What the claim is asking the operator for, and where each request stands |
+| `POST /api/questions/{id}/answer` | `yes_have_it`, `not_available` or `not_applicable`; the last two require a reason |
+| `POST /api/questions/{id}/documents` | Upload the document that answers a question. It is queued for processing straight away and resolves the question only if it classifies as the expected type. |
+| `GET /api/claims/{id}/changes` | What each pass of analysis changed, as a comparison of two structured states |
+| `POST /api/claims/{id}/assistant` | Ask about this claim. The answer carries its sources and the provider that wrote it. |
+| `GET /api/assistant/provider` | Which provider answers, and whether a key is configured for it |
 | `POST /api/claims/{id}/validate` | Run the rules again over the documents as they stand |
 | `POST /api/findings/{id}/action` | `review`, `resolve`, `acknowledge`, `reopen` or `exclude_duplicate` |
 | `POST /api/demo/reset` | Body `{"confirm": true}` (JSON only, so other web pages cannot trigger it). Delete all claims and originals, recreate and verify the demo data, restart numbering. Application settings are kept; in-flight requests finish first. |
@@ -241,13 +295,16 @@ In development, the Vite dev server forwards `/api` to `http://127.0.0.1:8010`. 
 │   │   ├── storage.py       write-once original storage (SHA-256, read-only)
 │   │   ├── audit.py         audit trail helper
 │   │   ├── worker.py        single-threaded processing queue (FIFO, restart-safe)
-│   │   ├── api/             routes: health, claims, documents, analysis, validation, checklist, demo, audit
-│   │   ├── services/        claims, numbering, intake, demo packs, analysis, canonical, validation, workspace reset
+│   │   ├── api/             routes: health, claims, documents, analysis, validation, checklist, questions, assistant, demo, audit
+│   │   ├── services/        claims, numbering, intake, demo packs, analysis, canonical, validation, questions, re-analysis, assistant, workspace reset
 │   │   ├── processing/      text layer and covered text, rendering, OCR, quality, signatures, pipeline
 │   │   ├── analysis/        classification, value normalisation, field and bill extraction
 │   │   ├── canonical/       canonical claim: field map, weighted value selection, builder
 │   │   ├── validation/      rule registry, duplicate detection, the checks and the engine
 │   │   ├── checklist/       procedure checklist engine
+│   │   ├── questions/       what the claim asks the operator for
+│   │   ├── reanalysis/      the change model: two states compared
+│   │   ├── assistant/       claim context, providers, intents and the answer guard
 │   │   └── demo_gen/        deterministic synthetic document generator
 │   ├── config/              document_types.yaml, quality.yaml, canonical.yaml, rules.yaml, checklists.yaml
 │   ├── scripts/             ensure_db.py, smoke_test.py
@@ -256,7 +313,7 @@ In development, the Vite dev server forwards `/api` to `http://127.0.0.1:8010`. 
 ├── frontend/                React web app
 │   └── src/
 │       ├── app/             router, layout, error boundary
-│       ├── components/      layout, UI primitives, claims, upload, analysis, canonical, findings, checklist
+│       ├── components/      layout, UI primitives, claims, upload, analysis, canonical, findings, checklist, questions, changes, assistant
 │       ├── lib/             API client, hooks, types, formatting
 │       └── pages/           Dashboard, My Claims, New Claim, claim overview, claim intake, Reports, Settings
 ├── docker-compose.yml       optional PostgreSQL

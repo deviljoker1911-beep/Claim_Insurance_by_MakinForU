@@ -662,3 +662,130 @@ export interface ChecklistResponse extends ChecklistSection {
   claim_id: string
   claim_number: string
 }
+
+/** --- Questions, re-analysis and the assistant (phase 7) --- */
+
+export type QuestionStatus = 'open' | 'answered' | 'resolved' | 'documented_unavailable' | 'not_applicable'
+export type QuestionAnswer = 'yes_have_it' | 'not_available' | 'not_applicable'
+
+export interface QuestionUpload {
+  document_id: string
+  document_name: string
+  doc_type: string | null
+  doc_type_label: string | null
+  expected_document_types: string[]
+  satisfies: boolean
+  message: string
+  checked_at: string | null
+}
+
+export interface Question {
+  id: string
+  claim_id: string
+  requirement_key: string
+  requirement_label: string
+  procedure_key: string | null
+  question: string
+  reason: string
+  status: QuestionStatus
+  severity: Severity
+  expected_document_type: string
+  expected_document_types: string[]
+  answer: QuestionAnswer | null
+  answer_reason: string | null
+  answered_at: string | null
+  answered_by: string | null
+  resolved_document_id: string | null
+  resolved_at: string | null
+  last_upload: QuestionUpload | null
+  created_at: string
+  updated_at: string
+  actions_available: QuestionAnswer[]
+}
+
+export interface QuestionsResponse {
+  claim_id: string
+  claim_number: string
+  count: number
+  summary: { total: number; open: number; by_status: Record<string, number> }
+  items: Question[]
+}
+
+export interface QuestionAnswerResult {
+  question: Question
+  upload: {
+    endpoint: string
+    expected_document_type: string
+    expected_document_types: string[]
+    instruction: string
+  } | null
+}
+
+export type ChangeKind = 'document' | 'finding' | 'checklist' | 'canonical' | 'question' | 'procedure'
+
+export interface Change {
+  kind: ChangeKind
+  key: string
+  label: string
+  before: string | null
+  after: string | null
+  headline: string
+  severity: Severity | null
+  code: string | null
+  document_id: string | null
+  finding_id: string | null
+  question_id: string | null
+  requirement: string | null
+}
+
+export interface ReanalysisRun {
+  id: string
+  claim_id: string
+  sequence: number
+  trigger: string
+  summary: {
+    changes: number
+    documents_added: number
+    findings_opened: number
+    findings_auto_closed: number
+    questions_asked: number
+    questions_resolved: number
+    checklist_changed: number
+    canonical_changed: number
+    outstanding_requirements: number
+  }
+  changes: Change[]
+  documents_added: { document_id: string; filename: string }[]
+  started_at: string
+  completed_at: string | null
+  duration_ms: number | null
+}
+
+export interface ReanalysisResponse {
+  claim_id: string
+  claim_number: string
+  latest: ReanalysisRun | null
+  history: ReanalysisRun[]
+}
+
+export interface AssistantCitation {
+  kind: 'finding' | 'document' | 'requirement' | 'question' | 'claim'
+  id: string
+  label: string
+  detail: string | null
+  document_id: string | null
+  page: number | null
+}
+
+export interface AssistantAnswer {
+  claim_id: string
+  claim_number: string
+  question: string
+  intent: string
+  answer: string
+  citations: AssistantCitation[]
+  suggested_questions: string[]
+  provider: { name: string; model: string; mode: string; api_key_configured: boolean; fell_back_to?: string }
+  notice: string
+  removed_citations: string[]
+}

@@ -19,6 +19,8 @@
 #   severity     how much a missing one matters: critical, review, warning or info
 #   required     false marks a supporting document; it is still reported when absent
 #   applies_when a condition key from `conditions` below (default: always)
+#   question     what the operator is asked when the requirement is not met (phase 7)
+#   why          why the document is being asked for, stated from the claim's own records
 #   resolution   what a reviewer can do about it
 version: 1
 
@@ -44,6 +46,8 @@ requirements:
     description: The fitness assessment recorded before the operation.
     doc_types: [pre_operative_assessment]
     severity: review
+    question: Do you have the pre-operative assessment for this admission?
+    why: The records show an operation, and the assessment made before it is not among the documents.
     resolution: Upload the pre-operative assessment, or record why it was not carried out.
 
   - key: surgeon_consultation
@@ -51,6 +55,8 @@ requirements:
     description: The consultation note that establishes the indication for surgery.
     doc_types: [consultation]
     severity: review
+    question: Do you have the surgeon's consultation note for this admission?
+    why: The consultation that established the indication for surgery is not among the documents.
     resolution: Upload the consultation note that supports the decision to operate.
 
   - key: consent
@@ -58,6 +64,8 @@ requirements:
     description: The consent signed by the patient or the attendant before the operation.
     doc_types: [consent]
     severity: critical
+    question: Do you have the signed consent form for this admission?
+    why: No consent form was found, and an operation is documented for this admission.
     resolution: Upload the signed consent form.
 
   - key: anaesthesia_assessment
@@ -66,6 +74,8 @@ requirements:
     doc_types: [anaesthesia_assessment]
     severity: review
     applies_when: general_anaesthesia
+    question: Do you have the pre-anaesthetic assessment for this admission?
+    why: The records show anaesthesia was given, and the assessment made before it is not among the documents.
     resolution: Upload the pre-anaesthetic assessment.
 
   - key: operative_note
@@ -73,6 +83,8 @@ requirements:
     description: The surgeon's record of the operation performed.
     doc_types: [operative_note]
     severity: critical
+    question: Do you have the operative note for this admission?
+    why: The documents record an operation, and the surgeon's note of it is not among them.
     resolution: Upload the operative note, or record why it is not available.
 
   - key: anaesthesia_record
@@ -81,6 +93,8 @@ requirements:
     doc_types: [anaesthesia_record]
     severity: critical
     applies_when: general_anaesthesia
+    question: Do you have the anaesthesia record for this admission?
+    why: The documents record an operation under anaesthesia, and the anaesthesia chart is not among them.
     resolution: Upload the anaesthesia record, or record why it is not available.
 
   - key: post_operative_notes
@@ -88,6 +102,8 @@ requirements:
     description: The progress notes written after the operation.
     doc_types: [post_operative_note]
     severity: review
+    question: Do you have the post-operative notes for this admission?
+    why: The progress notes written after the operation are not among the documents.
     resolution: Upload the post-operative progress notes.
 
   - key: nursing_records
@@ -96,6 +112,8 @@ requirements:
     doc_types: [nursing_record]
     severity: info
     required: false
+    question: Do you have the nursing record for this admission?
+    why: The ward nursing chart for the stay is not among the documents.
     resolution: Upload the nursing record if the insurer asks for it.
 
   - key: medication_records
@@ -104,6 +122,8 @@ requirements:
     doc_types: [prescription]
     severity: info
     required: false
+    question: Do you have the prescription or medication chart for this admission?
+    why: The medication record for the stay is not among the documents.
     resolution: Upload the prescription or medication chart if the insurer asks for it.
 
   - key: investigation_reports
@@ -111,6 +131,8 @@ requirements:
     description: The laboratory and imaging reports for the admission.
     doc_types: [lab_report, investigation_report]
     severity: review
+    question: Do you have the investigation reports for this admission?
+    why: No laboratory or imaging report was found for this admission.
     resolution: Upload the investigation reports referred to in the clinical notes.
 
   - key: discharge_summary
@@ -118,6 +140,8 @@ requirements:
     description: The summary of the admission, the operation and the advice on discharge.
     doc_types: [discharge_summary]
     severity: critical
+    question: Do you have the discharge summary for this admission?
+    why: No discharge summary was found, and the admission has a discharge date.
     resolution: Upload the discharge summary.
 
   - key: bills
@@ -125,6 +149,8 @@ requirements:
     description: The final in-patient bill for the admission.
     doc_types: [hospital_bill]
     severity: critical
+    question: Do you have the final hospital bill for this admission?
+    why: No hospital bill was found for this admission.
     resolution: Upload the final hospital bill.
 
   - key: implant_invoice
@@ -133,6 +159,8 @@ requirements:
     doc_types: [implant_invoice]
     severity: review
     applies_when: implant_billed
+    question: Do you have the implant invoice for this operation?
+    why: An implant is part of this claim, and the vendor invoice for it is not among the documents.
     resolution: Upload the implant invoice that matches the implant recorded in the operative note.
 
 procedures:

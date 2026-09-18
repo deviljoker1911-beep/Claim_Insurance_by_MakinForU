@@ -12,7 +12,18 @@ from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app import __version__
-from app.api import analysis, audit, checklist, claims, demo, documents, health, validation
+from app.api import (
+    analysis,
+    assistant,
+    audit,
+    checklist,
+    claims,
+    demo,
+    documents,
+    health,
+    questions,
+    validation,
+)
 from app.config import get_settings
 from app.db import init_db
 from app.worker import get_worker
@@ -59,6 +70,8 @@ app.include_router(documents.router, prefix="/api")
 app.include_router(analysis.router, prefix="/api")
 app.include_router(validation.router, prefix="/api")
 app.include_router(checklist.router, prefix="/api")
+app.include_router(questions.router, prefix="/api")
+app.include_router(assistant.router, prefix="/api")
 app.include_router(demo.router, prefix="/api")
 app.include_router(audit.router, prefix="/api")
 

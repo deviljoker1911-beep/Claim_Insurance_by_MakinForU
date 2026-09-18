@@ -85,8 +85,11 @@ def test_queueing_is_recorded_and_the_claim_moves_to_processing(client, claim):
         "claim_analysis_started",
         "document_processed",
         "claim_analysis_completed",
-        # Analysis is followed by validation over what was just read.
+        # Analysis is followed by one re-analysis pass: the rules run over what was just read,
+        # the checklist asks for what is missing, and the difference is recorded.
+        "reanalysis_started",
         "validation_completed",
+        "reanalysis_completed",
     ]
     assert client.get(f"/api/claims/{claim['id']}").json()["status"] == "processed"
 

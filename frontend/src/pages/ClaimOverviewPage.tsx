@@ -8,11 +8,15 @@ import {
   Stethoscope,
   UserRound,
 } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useParams } from 'react-router'
+import { useQueryClient } from '@tanstack/react-query'
 
+import { AssistantPanel } from '../components/assistant/AssistantPanel'
 import { BillsPanel } from '../components/canonical/BillsPanel'
+import { ChangeSummary } from '../components/changes/ChangeSummary'
 import { ChecklistPanel, ProcedureSummary } from '../components/checklist/ChecklistPanel'
+import { QuestionsPanel, QuestionsSummaryBadge } from '../components/questions/QuestionsPanel'
 import { ChecksPanel } from '../components/findings/ChecksPanel'
 import { FindingsPanel } from '../components/findings/FindingsPanel'
 import { CanonicalFieldList, CanonicalFieldRow, SourceChip } from '../components/canonical/CanonicalField'
@@ -28,7 +32,17 @@ import { PageHeader } from '../components/ui/PageHeader'
 import { Skeleton } from '../components/ui/Skeleton'
 import { ApiError, errorMessage } from '../lib/api'
 import { formatDate, formatDateTime, plural } from '../lib/format'
-import { useChecklist, useChecks, useClaimState, useFindingAction, useFindings } from '../lib/hooks'
+import {
+  claimViews,
+  useChanges,
+  useChecklist,
+  useChecks,
+  useClaimProcessing,
+  useClaimState,
+  useFindingAction,
+  useFindings,
+  useQuestions,
+} from '../lib/hooks'
 import type { CanonicalValue, ClaimState, Finding, FindingAction, ProcedureItem } from '../lib/types'
 
 export function ClaimOverviewPage() {
@@ -37,6 +51,22 @@ export function ClaimOverviewPage() {
   const findings = useFindings(claimId)
   const checks = useChecks(claimId)
   const checklist = useChecklist(claimId)
+  const questions = useQuestions(claimId)
+  const changes = useChanges(claimId)
+  const processing = useClaimProcessing(claimId)
+  const queryClient = useQueryClient()
+  const wasRunning = useRef(false)
+
+  // A document uploaded from a question is processed in the background: follow that run and
+  // refresh what the claim derives from it the moment it finishes.
+  useEffect(() => {
+    const running = processing.data?.state === 'running'
+    if (running) wasRunning.current = true
+    else if (wasRunning.current) {
+      wasRunning.current = false
+      void claimViews(queryClient, claimId)
+    }
+  }, [processing.data?.state, claimId, queryClient])
   const findingAction = useFindingAction(claimId)
   const [evidence, setEvidence] = useState<EvidenceRequest | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
@@ -138,6 +168,36 @@ export function ClaimOverviewPage() {
 
       <div className="grid grid-cols-1 items-start gap-6 xl:grid-cols-[minmax(0,1fr)_340px]">
         <div className="space-y-6">
+          <Card data-testid="questions-card">
+            <CardHeader
+              title="What ClaimAI needs from you"
+              description="Each request comes from a checklist requirement this claim does not yet meet."
+              actions={questions.data ? <QuestionsSummaryBadge questions={questions.data.items} /> : undefined}
+            />
+            {questions.isPending ? (
+              <div className="space-y-2 p-5">
+                <Skeleton className="h-16 rounded-lg" />
+                <Skeleton className="h-16 rounded-lg" />
+              </div>
+            ) : questions.data ? (
+              <QuestionsPanel questions={questions.data.items} claimId={claimId} />
+            ) : (
+              <p className="px-5 py-6 text-sm text-slate-500">
+                {questions.error?.message ?? 'Questions are unavailable.'}
+              </p>
+            )}
+          </Card>
+
+          {changes.data?.latest && (
+            <Card data-testid="changes-card">
+              <CardHeader
+                title="What changed"
+                description="Each pass compares the claim as it was with the claim as it is now."
+              />
+              <ChangeSummary run={changes.data.latest} history={changes.data.history} />
+            </Card>
+          )}
+
           <Card data-testid="checklist-card">
             <CardHeader
               title="Procedure checklist"
@@ -355,6 +415,48 @@ export function ClaimOverviewPage() {
         </div>
 
         <aside className="space-y-6 xl:sticky xl:top-24">
+          <Card data-testid="assistant-card">
+            <CardHeader
+              title="Claim assistant"
+              description="Answers from this claim's documents, findings, checklist and questions."
+            />
+            <AssistantPanel
+              claimId={claimId}
+              onOpenCitation={(citation) => {
+                if (!citation.document_id) return
+                setEvidence({
+                  title: citation.label,
+                  value: citation.detail,
+                  sources: [
+                    {
+                      document_id: citation.document_id,
+                      document_name: citation.label,
+                      document_type: null,
+                      document_type_label: citation.detail,
+                      page: citation.page,
+                      bounding_box: null,
+                      snippet: null,
+                      method: 'assistant_citation',
+                      source_type: 'citation',
+                      source_type_label: 'Assistant source',
+                      extraction_method: 'citation',
+                      confidence: null,
+                      weight: null,
+                      eligible: true,
+                      excluded_reason: null,
+                      value: null,
+                      raw_value: null,
+                      field_key: 'assistant.citation',
+                      derived_from: null,
+                      evidence_available: Boolean(citation.page),
+                    },
+                  ],
+                  note: 'Cited by the assistant from this claim.',
+                })
+              }}
+            />
+          </Card>
+
           <ClaimRecord state={state} />
           <Card className="p-5" data-testid="selection-panel">
             <p className="text-[15px] font-semibold text-slate-900">How values were chosen</p>
@@ -381,6 +483,7 @@ export function ClaimOverviewPage() {
             </ul>
           </Card>
 
+          {Object.keys(state.meta.pending_sections).length > 0 && (
           <Card className="p-5" data-testid="pending-panel">
             <p className="text-[15px] font-semibold text-slate-900">Still to come</p>
             <ul className="mt-2 space-y-2 text-sm text-slate-500">
@@ -394,6 +497,7 @@ export function ClaimOverviewPage() {
               ))}
             </ul>
           </Card>
+          )}
 
           <Card className="p-5">
             <p className="text-[15px] font-semibold text-slate-900">Snapshot</p>

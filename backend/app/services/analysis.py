@@ -267,6 +267,10 @@ def store_result(session: Session, document: Document, result: ProcessingResult)
             "duration_ms": result.duration_ms,
         },
     )
+    if document.question_id:
+        from app.services import questions as question_service
+
+        question_service.review_upload(session, document)
     session.commit()
 
 
@@ -289,8 +293,6 @@ def mark_failed(session: Session, document: Document, message: str) -> None:
 
 def finish_claim_if_done(session: Session, claim_id: str) -> None:
     """Move a claim to `processed` once none of its documents are waiting."""
-    from app.services import canonical as canonical_service
-
     claim = session.get(Claim, claim_id)
     if claim is None:
         return
@@ -309,20 +311,15 @@ def finish_claim_if_done(session: Session, claim_id: str) -> None:
         details={"processed": counts.get(STATUS_PROCESSED, 0), "failed": counts.get(STATUS_FAILED, 0)},
     )
     session.commit()
-    # Build the canonical claim from what was just extracted, then validate it, so both are
-    # ready to be read. Neither failure may fail the analysis itself.
+    # Everything derived from the documents is refreshed together — canonical claim, findings,
+    # checklist and questions — and what changed is recorded. A failure here must not fail the
+    # analysis itself.
     try:
-        payload, _ = canonical_service.refresh(session, claim)
-    except Exception as exc:  # noqa: BLE001
-        logger.exception("Could not build the canonical claim for %s: %s", claim.claim_number, exc)
-        session.rollback()
-        return
-    try:
-        from app.services import validation as validation_service
+        from app.services import reanalysis as reanalysis_service
 
-        validation_service.refresh(session, claim, actor="system", state=payload)
+        reanalysis_service.run(session, claim, trigger="analysis")
     except Exception as exc:  # noqa: BLE001
-        logger.exception("Could not validate %s: %s", claim.claim_number, exc)
+        logger.exception("Could not re-analyse %s: %s", claim.claim_number, exc)
         session.rollback()
 
 

@@ -109,7 +109,7 @@ def checklists_config() -> dict[str, Any]:
 
     catalogue: dict[str, dict] = {}
     for requirement in data["requirements"]:
-        for key in ("key", "label", "description", "doc_types", "severity", "resolution"):
+        for key in ("key", "label", "description", "doc_types", "severity", "resolution", "question", "why"):
             if not requirement.get(key):
                 raise ConfigError(f"checklists.yaml: requirement {requirement.get('key', '?')} is missing {key}")
         if requirement["key"] in catalogue:

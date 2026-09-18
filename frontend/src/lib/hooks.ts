@@ -1,7 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
-import { api, ApiError } from './api'
+import { api, ApiError, uploadFiles } from './api'
 import type {
+  AssistantAnswer,
   ChecklistResponse,
   ChecksResponse,
   Claim,
@@ -17,6 +18,12 @@ import type {
   DemoResetResult,
   DemoSet,
   HealthResponse,
+  Question,
+  QuestionAnswer,
+  QuestionAnswerResult,
+  QuestionsResponse,
+  ReanalysisResponse,
+  UploadResult,
 } from './types'
 
 export function useHealth() {
@@ -102,6 +109,64 @@ export function useChecklist(claimId: string) {
     queryFn: () => api<ChecklistResponse>(`/claims/${encodeURIComponent(claimId)}/checklist`),
     enabled: Boolean(claimId),
     retry: (count, error) => !(error instanceof ApiError && error.status === 404) && count < 2,
+  })
+}
+
+export function useQuestions(claimId: string) {
+  return useQuery({
+    queryKey: ['claims', claimId, 'questions'],
+    queryFn: () => api<QuestionsResponse>(`/claims/${encodeURIComponent(claimId)}/questions`),
+    enabled: Boolean(claimId),
+    retry: (count, error) => !(error instanceof ApiError && error.status === 404) && count < 2,
+  })
+}
+
+export function useChanges(claimId: string) {
+  return useQuery({
+    queryKey: ['claims', claimId, 'changes'],
+    queryFn: () => api<ReanalysisResponse>(`/claims/${encodeURIComponent(claimId)}/changes`),
+    enabled: Boolean(claimId),
+    retry: (count, error) => !(error instanceof ApiError && error.status === 404) && count < 2,
+  })
+}
+
+/** Everything a claim derives from its documents moves together, so refresh it together. */
+export function claimViews(queryClient: ReturnType<typeof useQueryClient>, claimId: string) {
+  return Promise.all(
+    ['questions', 'findings', 'checks', 'checklist', 'changes', 'state', 'processing'].map((view) =>
+      queryClient.invalidateQueries({ queryKey: ['claims', claimId, view] }),
+    ),
+  )
+}
+
+export function useAnswerQuestion(claimId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ question, answer, reason }: { question: Question; answer: QuestionAnswer; reason?: string }) =>
+      api<QuestionAnswerResult>(`/questions/${encodeURIComponent(question.id)}/answer`, {
+        method: 'POST',
+        body: JSON.stringify({ answer, reason: reason ?? null }),
+      }),
+    onSuccess: () => claimViews(queryClient, claimId),
+  })
+}
+
+export function useUploadForQuestion(claimId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ questionId, files }: { questionId: string; files: File[] }) =>
+      uploadFiles<UploadResult>(`/questions/${encodeURIComponent(questionId)}/documents`, files),
+    onSuccess: () => claimViews(queryClient, claimId),
+  })
+}
+
+export function useAskAssistant(claimId: string) {
+  return useMutation({
+    mutationFn: (question: string) =>
+      api<AssistantAnswer>(`/claims/${encodeURIComponent(claimId)}/assistant`, {
+        method: 'POST',
+        body: JSON.stringify({ question }),
+      }),
   })
 }
 

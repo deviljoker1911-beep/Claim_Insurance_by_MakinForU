@@ -496,17 +496,14 @@ def test_investigations_are_listed_with_their_documents(analysed):
     )
 
 
-def test_sections_whose_engines_are_not_built_yet_are_present_and_empty(analysed):
+def test_every_section_of_the_canonical_claim_is_built(analysed):
+    """Each section of the model now has an engine behind it."""
     state = analysed["state"]
-    for section, phase in (("questions", "phase 7"), ("resolutions", "phase 7")):
-        assert state[section]["available"] is False
-        assert state[section]["items"] == []
-        assert state[section]["count"] == 0
-        assert phase in state[section]["note"]
-    assert set(state["meta"]["pending_sections"]) == {"questions", "resolutions"}
-    # Findings arrived with the validation engine, the checklist with the checklist engine.
-    assert state["findings"]["available"] is True
-    assert state["checklist"]["available"] is True
+    assert state["meta"]["pending_sections"] == {}
+    for section in ("patient", "admission", "diagnosis", "procedures", "doctors", "investigations"):
+        assert section in state
+    for section in ("findings", "checklist", "questions", "resolutions"):
+        assert state[section]["available"] is True, section
 
 
 def test_the_snapshot_carries_the_audit_trail(analysed):
