@@ -293,6 +293,8 @@ class PageOut(BaseModel):
     page_type: str | None = None
     page_type_confidence: float | None = None
     page_type_method: str | None = None
+    page_role: str | None = None
+    page_role_because: str | None = None
     quality: dict[str, Any] = {}
     quality_flags: list[QualityFlagOut] = []
 

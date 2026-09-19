@@ -188,8 +188,9 @@ types:
   - key: operative_note
     label: Operative note
     titles:
-      - "operat(ive|ion) (note|record|summary)"
-      - "surgery note"
+      - "operat(ive|ion) (note|record|summary|procedure)"
+      - "surg(ery|ical) (note|record)"
+      - "record of operation"
     keywords:
       - "procedure performed"
       - "operative findings"
@@ -200,8 +201,20 @@ types:
       - "estimated blood loss"
       - "wound class"
       - "specimen"
+      # What an operative note sets out, section by section: the operation, how it was done, and
+      # what came of it. Several of these together are what makes it one, rather than any single
+      # word — a discharge summary naming the operation carries the word and none of the shape.
+      - "technique"
+      - "incision"
+      - "closure"
+      - "complications"
+      - "duration of surgery|operative time"
     negatives:
       - "an(a)?esthesia record"
+      # A document that calls itself a discharge summary is not an operative note, however much of
+      # the operation it recounts.
+      - "discharge summary"
+      - "advice on discharge"
     extract: [identity, stay, clinical]
     signature_slots:
       - key: surgeon
@@ -306,6 +319,13 @@ types:
       - "collected on"
       - "reported on"
       - "specimen"
+      # How a pathology report identifies its sample and who asked for it. Printed on the report
+      # itself rather than in its heading, which is where a scanned report often carries only the
+      # hospital's letterhead.
+      - "sample collected"
+      - "\\blab (no|number)\\b"
+      - "ref(erred)? by"
+      - "collection (date|time)"
     negatives:
       - "ultrasound report"
     extract: [identity, investigation]
@@ -451,6 +471,27 @@ types:
         label: Vendor signatory
         match: "^for .+|signatory"
         required: false
+
+  - key: case_sheet
+    label: Indoor case papers
+    titles:
+      - "(indoor|in-?patient)? ?case (paper|papers|sheet|record)"
+      - "progress (note|notes|record|sheet)"
+      - "daily (progress|clinical) (note|notes|record)"
+      - "treatment (chart|sheet|record)"
+    keywords:
+      - "progress notes"
+      - "on examination"
+      - "\\bs/?o\\b|\\bo/?e\\b"
+      - "day [0-9]+ post-?op"
+      - "plan of (care|management)"
+      - "advised"
+      - "reviewed by"
+    negatives:
+      - "discharge summary"
+      - "nursing (record|notes|chart)"
+    extract: [identity, stay, clinical]
+    signature_slots: []
 
   - key: preauth_request
     label: Pre-authorisation request (cashless)

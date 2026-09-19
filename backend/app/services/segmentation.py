@@ -22,9 +22,11 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.audit import record_event
+from app.config_files import quality_config
 from app.models import Document
 from app.processing.pipeline import ReadFile, analyse_pages
 from app.segmentation.engine import Segment
+from app.text import plural
 from app.services import analysis as analysis_service
 
 logger = logging.getLogger("claimai.segmentation")
@@ -72,6 +74,37 @@ def _document_for(session: Session, source: Document, index: int, existing: dict
     return document
 
 
+def _note_uncertainty(document: Document, segment: Segment) -> None:
+    """Say so when pages were placed here for want of anywhere else to put them.
+
+    Nothing about the page said it began a document and nothing said it continued one, so it
+    stayed with the page before it. That is a reasonable thing to do and a bad thing to do
+    silently: the document carries a signal saying which pages they were, and a reader can see
+    that the system had no evidence rather than a quiet wrong answer.
+
+    It is a signal, not a finding. A page the system could not place is not a defect in the
+    paperwork, and nothing about the claim's readiness or its approval changes because of it.
+    """
+    pages = segment.ambiguous_pages
+    if not pages:
+        return
+    severities = quality_config()["severity"]
+    listed = ", ".join(str(number) for number in pages)
+    document.quality_flags = [
+        *(document.quality_flags or []),
+        {
+            "code": "classification_uncertain",
+            "severity": severities.get("classification_uncertain", "attention"),
+            "detail": (
+                f"Classification uncertain — requires review. {plural(len(pages), 'page')} "
+                f"({listed}) named no document and carried nothing tying them to this one, so they "
+                "were kept with the page they follow."
+            ),
+            "pages": list(pages),
+        },
+    ]
+
+
 def store(session: Session, source: Document, read: ReadFile, segments: list[Segment]) -> list[Document]:
     """Analyse each document found in the file and write it as a document of the claim.
 
@@ -97,6 +130,7 @@ def store(session: Session, source: Document, read: ReadFile, segments: list[Seg
             result,
             page_reads={item.number: item for item in segment.page_reads},
         )
+        _note_uncertainty(document, segment)
         documents.append(document)
 
     # A file read again may hold fewer documents than it did before: anything left over belonged to

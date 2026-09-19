@@ -115,7 +115,7 @@ The synthetic claim and its deliberately seeded issues are described in [`demo_d
 | Rendering | The PDF text layer is read (visible text only) and every page is rendered to a PNG for review. Originals are never modified. |
 | OCR | Pages with no usable text layer go through RapidOCR, which runs locally from models bundled in the package — no API key, no network. Where the OCR extras are absent, the demo falls back to labelled `demo_fixture` text shipped with the synthetic documents. |
 | Quality check | Effective resolution, edge sharpness, skew, blank and cropped-page checks, measured from the page itself — never from its filename. |
-| Classification | 20 document types, decided from the document's own headings and vocabulary. A scan called `scan_0042.pdf` is recognised as an operative note from its content. |
+| Classification | 21 document types, decided from the document's own headings and vocabulary. A scan called `scan_0042.pdf` is recognised as an operative note from its content. |
 | Extraction | Patient identity, admission and discharge dates, clinical details and billing tables (line items, quantities, rates, totals), with Indian digit grouping and day-first dates. |
 | Evidence | Every value keeps its document, page, page-relative box, snippet, method and confidence. A value that cannot be located says so rather than pointing at a page. |
 
@@ -146,6 +146,28 @@ ends and the next begins, and it is deliberately reluctant to say so:
 A page that is unsure of itself never ends a document: an uncertain page is a worse reason to cut a
 document in half than the continuity of the one it is inside. Pages that name nothing at all become
 one document of no known type, which a reviewer can see rather than a confident wrong answer.
+
+Where a page carries no evidence either way — no heading, no number of its own, nothing that reads
+like the document it follows — it stays with the page before it and is recorded as **ambiguous**.
+The document then carries *"Classification uncertain — requires review"* as a signal a reviewer can
+see. It is a signal and not a finding: a page the reader could not place is not a defect in the
+paperwork, and nothing about the claim's readiness or its approval turns on it.
+
+**Measured, not asserted.** `backend/tests/calibration.py` builds a claim packet whose every page is
+labelled — and, unlike the demo documents, carries no "Page 2 of 3" footer, because real paperwork
+mostly does not. `make test` measures the reader against it and prints the result:
+
+| | |
+|---|---|
+| Pages a document names itself on, classified correctly | 10 / 10 |
+| Document boundaries found | 9 / 10, with 0 drawn where no document began |
+| Documents recovered exactly (range and type) | 8 / 10 |
+| Over-segmentation | 0 |
+| Pages the reader could not place | 2 / 19 |
+
+The one document it does not recover is an unheaded continuation sheet following a bill: nothing on
+that page distinguishes it from the second page of the document before it, and the fixture keeps
+the case deliberately as the measured ceiling of what page-level evidence can decide.
 
 The pages keep the numbers they have in the uploaded file. A value read from page 7 of a bundle
 says page 7 of that bundle, the page image behind it is that page, and the report keeps the file
@@ -505,10 +527,12 @@ is ready to hold real patient data, and a pilot on real claims needs those parts
 **Claim bundles.** A file is divided into the documents it holds before anything else reads it.
 On the synthetic demo this is exact: eighteen documents merged into one file come back as the same
 eighteen, on the right pages, and the claim means the same as it does when they are uploaded
-separately. On real claim packets it is good but not exact — the paperwork is found, the bills are
-read and the pre-authorisation forms are recognised, while some pages of a long packet are grouped
-more finely than a person would group them, and some are left unclassified rather than guessed at.
-Where the system is unsure it says so instead of choosing.
+separately. Against the labelled packet it recovers 8 of 10 documents exactly and cuts no document
+in half. On real claim packets every document is given a type and the bills are read, but the
+confidence is often low — a scanned pathology report carries its hospital's letterhead where its
+heading should be, so it is recognised by its vocabulary rather than its name — and a long run of
+pharmacy bills is grouped by the numbers printed on them, which is right only as far as those
+numbers were read correctly. Where the system has no evidence it says so rather than choosing.
 
 **What has been verified, and how.** Backend tests run the real pipeline over the real synthetic
 documents — no mocks of OCR, extraction or rule evaluation. Beyond the suite: the demo path was

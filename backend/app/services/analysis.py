@@ -165,6 +165,8 @@ def store_result(
                 page_type=read.doc_type if read else None,
                 page_type_confidence=read.confidence if read else None,
                 page_type_method=read.method if read else None,
+                page_role=read.role if read else None,
+                page_role_because=(read.role_because or None) if read else None,
                 width=page.width,
                 height=page.height,
                 image_path=page.image_path,

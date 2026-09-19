@@ -218,6 +218,11 @@ class DocumentPage(Base):
     page_type: Mapped[str | None] = mapped_column(String(48))
     page_type_confidence: Mapped[float | None] = mapped_column(Float)
     page_type_method: Mapped[str | None] = mapped_column(String(32))
+    # Where this page sits in the document it was placed in: it began the document, it continues
+    # one for a reason that is recorded, or nothing said either way and it stayed with the page
+    # before it.
+    page_role: Mapped[str | None] = mapped_column(String(24))
+    page_role_because: Mapped[str | None] = mapped_column(String(32))
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 

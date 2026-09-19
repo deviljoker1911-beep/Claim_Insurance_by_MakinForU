@@ -45,3 +45,7 @@ severity:
   no_text_recovered: review
   signature_area_blank: review
   concealed_text: review
+  # Deliberately "attention", not "review": a page the system could not place is a note for the
+  # reader, not a defect in the page. Anything at "review" becomes a low-quality-page finding and
+  # would move the readiness of a claim whose paperwork is perfectly legible.
+  classification_uncertain: attention

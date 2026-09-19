@@ -1,4 +1,4 @@
-import { Copy, EyeOff, FileImage, FileStack, FileText, ScanText, TriangleAlert } from 'lucide-react'
+import { CircleHelp, Copy, EyeOff, FileImage, FileStack, FileText, ScanText, TriangleAlert } from 'lucide-react'
 import { Link } from 'react-router'
 
 import { formatBytes } from '../../lib/format'
@@ -69,6 +69,9 @@ export function DocumentInventory({ items, claimId }: { items: DocumentInventory
           {items.map((item) => {
             const review = item.quality_signals.filter((signal) => signal.severity === 'review').length
             const attention = item.quality_signals.length - review
+            // Pages the reader could not place. Shown as its own badge because "uncertain" is a
+            // different thing from a page that is hard to read.
+            const uncertain = item.quality_signals.find((signal) => signal.code === 'classification_uncertain')
             return (
               <tr
                 key={item.document_id}
@@ -143,6 +146,12 @@ export function DocumentInventory({ items, claimId }: { items: DocumentInventory
                       <Badge tone="danger" title="Text in the file is covered by opaque paint">
                         <EyeOff className="size-3.5" />
                         Covered text
+                      </Badge>
+                    )}
+                    {uncertain && (
+                      <Badge tone="warning" title={uncertain.detail}>
+                        <CircleHelp className="size-3.5" />
+                        Uncertain
                       </Badge>
                     )}
                     {review + attention + item.concealed_text_count === 0 && (

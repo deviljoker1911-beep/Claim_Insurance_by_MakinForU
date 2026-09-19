@@ -159,7 +159,14 @@ class Page:
     """Cursor-based writer for one A4 page. `y` is the baseline of the next line of text."""
 
     def __init__(
-        self, canvas: Canvas, letterhead: Letterhead, page_no: int, total: int, doc_ref: str, text_scale: float = 1.0
+        self,
+        canvas: Canvas,
+        letterhead: Letterhead,
+        page_no: int,
+        total: int,
+        doc_ref: str,
+        text_scale: float = 1.0,
+        page_numbering: bool = True,
     ):
         self.c = canvas
         self.lh = letterhead
@@ -167,6 +174,10 @@ class Page:
         self.total = total
         self.doc_ref = doc_ref
         self.k = text_scale
+        # Plenty of real paperwork carries no "Page 1 of 3" at all. Documents built without it
+        # stand in for that, so what is calibrated against them is not flattered by a marker the
+        # real world often does not provide.
+        self.page_numbering = page_numbering
         self.y = PAGE_H - 34
 
     # --- page chrome ----------------------------------------------------------------------
@@ -217,7 +228,8 @@ class Page:
         c.setFont(REGULAR, 6.8)
         c.setFillColor(FAINT)
         c.drawString(MARGIN_X, FOOTER_Y, self.doc_ref)
-        c.drawRightString(PAGE_W - MARGIN_X, FOOTER_Y, f"Page {self.page_no} of {self.total}")
+        if self.page_numbering:
+            c.drawRightString(PAGE_W - MARGIN_X, FOOTER_Y, f"Page {self.page_no} of {self.total}")
         c.setFont(BOLD, 7.4)
         c.setFillColor(NOTICE_RED)
         c.drawCentredString(PAGE_W / 2, FOOTER_Y, NOTICE)
@@ -450,12 +462,21 @@ def render_pdf(
     doc_ref: str,
     continuation_strip: str | None = None,
     text_scale: float = 1.0,
+    page_numbering: bool = True,
 ) -> bytes:
     buffer = io.BytesIO()
     canvas = Canvas(buffer, pagesize=A4, invariant=1, pageCompression=1)
     set_metadata(canvas, title)
     for number, build in enumerate(pages, start=1):
-        page = Page(canvas, letterhead, number, len(pages), doc_ref, text_scale=text_scale)
+        page = Page(
+            canvas,
+            letterhead,
+            number,
+            len(pages),
+            doc_ref,
+            text_scale=text_scale,
+            page_numbering=page_numbering,
+        )
         page.draw_letterhead()
         if number > 1 and continuation_strip:
             page.patient_strip(continuation_strip)
