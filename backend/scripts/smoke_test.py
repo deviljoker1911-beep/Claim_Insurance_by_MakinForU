@@ -692,7 +692,7 @@ def main() -> int:
     check(xlsx_bytes[:2] == b"PK", f"Excel report served ({len(xlsx_bytes) // 1024} KB)")
     with zipfile.ZipFile(io.BytesIO(xlsx_bytes)) as archive:
         sheets = [name for name in archive.namelist() if name.startswith("xl/worksheets/")]
-        check(archive.testzip() is None and len(sheets) == 12, f"the workbook holds {len(sheets)} sheets")
+        check(archive.testzip() is None and len(sheets) == 13, f"the workbook holds {len(sheets)} sheets")
 
     status, audit_reports = call(base, "GET", f"/api/claims/{second['id']}/audit")
     exports = [event for event in audit_reports if event["event_type"] == "report_generated"]

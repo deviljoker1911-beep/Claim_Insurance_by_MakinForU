@@ -1,4 +1,4 @@
-import { Copy, EyeOff, FileImage, FileText, ScanText, TriangleAlert } from 'lucide-react'
+import { Copy, EyeOff, FileImage, FileStack, FileText, ScanText, TriangleAlert } from 'lucide-react'
 import { Link } from 'react-router'
 
 import { formatBytes } from '../../lib/format'
@@ -16,9 +16,41 @@ function Icon({ name }: { name: string }) {
   )
 }
 
+/** The files that were uploaded, and how many documents were read out of each. */
+function sourceFiles(items: DocumentInventoryItem[]) {
+  const files = new Map<string, { filename: string; pages: number | null; documents: DocumentInventoryItem[] }>()
+  for (const item of items) {
+    const key = item.source_file_id ?? item.document_id
+    const entry = files.get(key) ?? {
+      filename: item.filename,
+      pages: item.source_page_count ?? item.page_count,
+      documents: [],
+    }
+    entry.documents.push(item)
+    files.set(key, entry)
+  }
+  return [...files.values()]
+}
+
 export function DocumentInventory({ items, claimId }: { items: DocumentInventoryItem[]; claimId: string }) {
+  // A claim packet arrives as one file holding many documents. Where that happened, the file is
+  // named above the documents that were found inside it, so the two are not confused.
+  const bundles = sourceFiles(items).filter((file) => file.documents.length > 1)
   return (
     <div className="overflow-x-auto">
+      {bundles.length > 0 && (
+        <ul className="border-b border-slate-100 px-3 py-2.5 text-xs text-slate-600" data-testid="source-files">
+          {bundles.map((file) => (
+            <li key={file.filename + String(file.pages)} className="flex items-center gap-2 py-0.5">
+              <FileStack className="size-3.5 shrink-0 text-slate-400" />
+              <span className="font-medium text-slate-900">{file.filename}</span>
+              <span className="text-slate-500">
+                {file.pages} pages · read as {file.documents.length} documents
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
       <table className="w-full min-w-[820px] text-left text-sm" data-testid="document-inventory">
         <thead>
           <tr className="border-b border-slate-100 bg-slate-50/60">
@@ -49,11 +81,18 @@ export function DocumentInventory({ items, claimId }: { items: DocumentInventory
                   <div className="flex items-center gap-3">
                     <Icon name={item.filename} />
                     <div className="min-w-0">
-                      <p className="truncate font-medium text-slate-900" title={item.filename}>
-                        {item.filename}
+                      <p className="truncate font-medium text-slate-900" title={item.display_name ?? item.filename}>
+                        {item.display_name ?? item.filename}
                       </p>
                       <p className="text-xs text-slate-500">
-                        {formatBytes(item.size_bytes)} · {item.extracted_field_count} values
+                        {item.is_part_of_a_bundle ? (
+                          <>
+                            page{item.page_numbers.length === 1 ? '' : 's'} {item.page_span} of {item.filename}
+                          </>
+                        ) : (
+                          formatBytes(item.size_bytes)
+                        )}{' '}
+                        · {item.extracted_field_count} values
                       </p>
                       {item.excluded && (
                         <p className="mt-0.5 inline-flex items-center gap-1 text-xs text-slate-500" title={item.exclusion_reason ?? undefined}>
@@ -78,7 +117,9 @@ export function DocumentInventory({ items, claimId }: { items: DocumentInventory
                     <span className="text-slate-400">—</span>
                   )}
                 </td>
-                <td className="px-3 py-3 text-slate-600 tabular-nums">{item.page_count ?? '—'}</td>
+                <td className="px-3 py-3 text-slate-600 tabular-nums" title={item.is_part_of_a_bundle ? `pages ${item.page_span} of ${item.filename}` : undefined}>
+                  {item.page_count ?? '—'}
+                </td>
                 <td className="px-3 py-3 whitespace-nowrap text-xs text-slate-600">
                   {item.ocr_engine ? (
                     <span className="inline-flex items-center gap-1">

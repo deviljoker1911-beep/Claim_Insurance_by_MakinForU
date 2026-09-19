@@ -901,17 +901,73 @@ def test_bill_checks_do_not_apply_without_bills():
 # --- duplicates ---------------------------------------------------------------------------
 
 
-def test_byte_identical_documents_are_duplicates():
+def _page(document: Document, number: int, text: str) -> DocumentPage:
+    return DocumentPage(
+        document_id=document.id, claim_id="claim-1", page_number=number, width=595.0, height=842.0, text=text
+    )
+
+
+def test_documents_made_of_the_same_pages_are_duplicates():
+    """The same document twice, whether it came as two files or twice inside one.
+
+    A document used to be a duplicate when the bytes of the file it arrived in matched. That
+    identifies a file, and one file can hold a dozen documents; what makes two documents the same
+    document is that they are made of the same pages.
+    """
     original = document("10_Lab_Report.pdf", doc_type="lab_report", sha256="a" * 64, uploaded=1)
     copy = document("11_Lab_Report_copy.pdf", doc_type="lab_report", sha256="a" * 64, uploaded=2)
     other = document("06_Discharge_Summary.pdf", doc_type="discharge_summary", sha256="b" * 64, uploaded=3)
-    outcome = engine.check_duplicate_documents(context(state(), [original, copy, other]))
+    pages = {
+        original.id: [_page(original, 1, "LABORATORY REPORT Haemoglobin 13.4")],
+        copy.id: [_page(copy, 1, "LABORATORY REPORT Haemoglobin 13.4")],
+        other.id: [_page(other, 1, "DISCHARGE SUMMARY")],
+    }
+    outcome = engine.check_duplicate_documents(context(state(), [original, copy, other], pages))
     assert codes(outcome) == ["DUPLICATE_DOCUMENT"]
     finding = outcome.findings[0]
     assert finding.context["document_name"] == "11_Lab_Report_copy.pdf"
     assert finding.context["original_name"] == "10_Lab_Report.pdf"
-    assert finding.subject == f"duplicate_document:{'a' * 64}:11_Lab_Report_copy.pdf"
+    assert finding.subject.startswith("duplicate_document:")
+    assert finding.subject.endswith(":11_Lab_Report_copy.pdf:all")
     assert len(finding.evidence) == 2
+
+
+def test_two_documents_of_one_file_are_not_copies_of_each_other():
+    """Every document in a claim packet shares the file's bytes and is not a copy of the others.
+
+    This is what reading a bundle by its file digest would have said: eighteen documents inside
+    one PDF, each reported as a duplicate of the seventeen others.
+    """
+    bill = document("ClaimBundle.pdf", doc_type="hospital_bill", sha256="c" * 64, uploaded=1)
+    bill.page_numbers, bill.source_page_count = [5, 6], 9
+    summary = document("ClaimBundle.pdf", doc_type="discharge_summary", sha256="c" * 64, uploaded=1)
+    summary.id = "doc-bundle-2"
+    summary.page_numbers, summary.source_page_count = [7, 8], 9
+    pages = {
+        bill.id: [_page(bill, 5, "FINAL BILL room rent"), _page(bill, 6, "FINAL BILL pharmacy")],
+        summary.id: [_page(summary, 7, "DISCHARGE SUMMARY diagnosis"), _page(summary, 8, "advice on discharge")],
+    }
+    outcome = engine.check_duplicate_documents(context(state(), [bill, summary], pages))
+    assert outcome.findings == [], "documents of one file are not copies of one another"
+    assert outcome.status == engine.PASS
+
+
+def test_the_same_document_twice_inside_one_file_is_a_duplicate():
+    """A packet that carries the same report twice says so, and names the pages of each."""
+    first = document("ClaimBundle.pdf", doc_type="lab_report", sha256="c" * 64, uploaded=1)
+    first.page_numbers, first.source_page_count = [3], 4
+    second = document("ClaimBundle.pdf", doc_type="lab_report", sha256="c" * 64, uploaded=1)
+    second.id = "doc-bundle-second"
+    second.page_numbers, second.source_page_count = [4], 4
+    pages = {
+        first.id: [_page(first, 3, "LABORATORY REPORT Haemoglobin 13.4")],
+        second.id: [_page(second, 4, "LABORATORY REPORT Haemoglobin 13.4")],
+    }
+    outcome = engine.check_duplicate_documents(context(state(), [first, second], pages))
+    assert codes(outcome) == ["DUPLICATE_DOCUMENT"]
+    finding = outcome.findings[0]
+    assert finding.context["document_name"] == "ClaimBundle.pdf (page 4)"
+    assert finding.context["original_name"] == "ClaimBundle.pdf (page 3)"
 
 
 def test_documents_with_different_bytes_are_not_duplicates():

@@ -188,6 +188,9 @@ def _documents_section(documents: list[Document], fields: list[ExtractedField]) 
             {
                 "document_id": document.id,
                 "filename": document.original_filename,
+                # What to call this document: the file it arrived in, and where in that file when
+                # the file holds more than one document.
+                "display_name": document.display_name,
                 "doc_type": document.doc_type,
                 "doc_type_label": type_label(document.doc_type) if document.doc_type else None,
                 "classification_confidence": document.doc_type_confidence,
@@ -196,6 +199,13 @@ def _documents_section(documents: list[Document], fields: list[ExtractedField]) 
                 "processing_stage": document.processing_stage,
                 "processing_error": document.processing_error,
                 "page_count": document.page_count,
+                # --- the file this document was read out of (phase 11) ---
+                "source_file_id": document.source_file_id,
+                "source_page_count": document.source_page_count,
+                "page_numbers": list(document.page_numbers or []),
+                "page_span": document.page_span,
+                "is_part_of_a_bundle": document.is_part_of_a_bundle,
+                "segment_index": document.segment_index,
                 "quality_signals": list(document.quality_flags or []),
                 "quality_signal_count": len(document.quality_flags or []),
                 "ocr_method": document.ocr_engine or document.text_source,

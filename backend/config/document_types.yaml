@@ -362,6 +362,9 @@ types:
       - "(final )?(hospital|in-?patient) bill"
       - "^final bill$"
       - "bill of supply"
+      - "(credit |cash )?final detailed bill"
+      - "(detailed|consolidated|summary) bill"
+      - "\\bip bill\\b"
     keywords:
       - "room rent"
       - "net payable"
@@ -448,6 +451,28 @@ types:
         label: Vendor signatory
         match: "^for .+|signatory"
         required: false
+
+  - key: preauth_request
+    label: Pre-authorisation request (cashless)
+    titles:
+      - "request for cashless hospitali[sz]ation"
+      - "pre-?auth(ori[sz]ation)?\\s*(request|form|letter)"
+      - "cashless\\s*(authori[sz]ation|request|claim)\\s*(letter|form)?"
+      - "authori[sz]ation letter"
+      - "claim form\\s*-?\\s*part\\s*[a-d]\\b"
+    keywords:
+      - "cashless"
+      - "\\btpa\\b"
+      - "policy (no|number)"
+      - "sum insured"
+      - "to be filled (in )?by the hospital"
+      - "\\bpart\\s*[a-d]\\b"
+      - "nature of illness"
+      - "name of the (treating )?doctor"
+    negatives:
+      - "discharge summary"
+    extract: [identity, cover, stay]
+    signature_slots: []
 
   - key: other
     label: Unclassified document

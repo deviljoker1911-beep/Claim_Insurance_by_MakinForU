@@ -347,9 +347,22 @@ def sheets_for(report: dict) -> list[Sheet]:
         for question in report["questions"]
     ]
 
+    source_file_rows = [
+        [
+            entry["filename"],
+            entry["page_count"],
+            entry["document_count"],
+            "; ".join(f"{item['doc_type_label']} pp. {item['pages']}" for item in entry["documents"]),
+            entry["sha256"],
+            entry["uploaded_at"],
+        ]
+        for entry in (report.get("source_files") or [])
+    ]
+
     document_rows = [
         [
-            document["filename"],
+            document["display_name"],
+            _row_text(document["pages"]),
             _row_text(document["doc_type_label"]),
             document["classification_confidence"],
             document["page_count"],
@@ -454,9 +467,15 @@ def sheets_for(report: dict) -> list[Sheet]:
         Sheet("Human Decisions", ["Kind", "Subject", "Decision", "By", "At", "Note", "Reference"], decision_rows),
         Sheet("Unresolved", ["Kind", "Item", "Why", "What to do", "Reported by"], unresolved_rows),
         Sheet(
+            "Uploaded Files",
+            ["File", "Pages", "Documents found", "Documents", "SHA-256", "Uploaded"],
+            source_file_rows,
+        ),
+        Sheet(
             "Documents",
             [
-                "File",
+                "Document",
+                "Pages of the file",
                 "Type",
                 "Confidence",
                 "Pages",

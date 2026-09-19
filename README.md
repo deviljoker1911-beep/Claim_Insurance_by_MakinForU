@@ -18,10 +18,11 @@ ClaimAI is a working prototype for hospital claims desks. It checks a health-ins
 ## Workflow
 
 ```
-Document upload → OCR → Classification → Extraction → Claim structuring
-→ Cross-document validation → Procedure detection → Procedure checklist
-→ Missing-document detection → AI questions → Operator upload / confirmation
-→ Re-analysis → Claim documentation readiness report → Human final review
+Document upload → OCR → Bundle segmentation → Classification → Extraction
+→ Claim structuring → Cross-document validation → Procedure detection
+→ Procedure checklist → Missing-document detection → AI questions
+→ Operator upload / confirmation → Re-analysis
+→ Claim documentation readiness report → Human final review
 ```
 
 ## Build status
@@ -38,6 +39,7 @@ Document upload → OCR → Classification → Extraction → Claim structuring
 | 8 | Readiness, dashboard and human approval | ✅ Done |
 | 9 | Final report (HTML / PDF / Excel) and audit trail | ✅ Done |
 | 10 | Hardening: concurrency, recovery, determinism, report integrity | ✅ Done |
+| 11 | Claim bundles: one uploaded file read as the documents it holds | ✅ Done |
 
 ## Tech stack
 
@@ -113,11 +115,53 @@ The synthetic claim and its deliberately seeded issues are described in [`demo_d
 | Rendering | The PDF text layer is read (visible text only) and every page is rendered to a PNG for review. Originals are never modified. |
 | OCR | Pages with no usable text layer go through RapidOCR, which runs locally from models bundled in the package — no API key, no network. Where the OCR extras are absent, the demo falls back to labelled `demo_fixture` text shipped with the synthetic documents. |
 | Quality check | Effective resolution, edge sharpness, skew, blank and cropped-page checks, measured from the page itself — never from its filename. |
-| Classification | 19 document types, decided from the document's own headings and vocabulary. A scan called `scan_0042.pdf` is recognised as an operative note from its content. |
+| Classification | 20 document types, decided from the document's own headings and vocabulary. A scan called `scan_0042.pdf` is recognised as an operative note from its content. |
 | Extraction | Patient identity, admission and discharge dates, clinical details and billing tables (line items, quantities, rates, totals), with Indian digit grouping and day-first dates. |
 | Evidence | Every value keeps its document, page, page-relative box, snippet, method and confidence. A value that cannot be located says so rather than pointing at a page. |
 
 Text that a document hides behind opaque paint is detected, reported separately as a signal that needs human verification, and excluded from every extracted value.
+
+### Claim bundles
+
+A claim rarely arrives as one file per document. It arrives as one PDF per claim, holding the
+cashless request, the case papers, the bills, the reports and the discharge summary one after
+another. Read as a single document, a packet like that becomes whatever its first page looks
+like — and every document actually inside it is then reported as missing.
+
+So a file is read once and then divided into the documents it holds. Each page is classified on
+its own by the engine that classifies documents, against the same
+[`document_types.yaml`](backend/config/document_types.yaml); nothing new decides what a page is.
+[`backend/config/segmentation.yaml`](backend/config/segmentation.yaml) says only where one document
+ends and the next begins, and it is deliberately reluctant to say so:
+
+| Signal | What it means |
+|--------|---------------|
+| "Page 2 of 5" on the page | The page is inside a document already open, whatever else it looks like |
+| "Page 1 of 5" on the page | The document before it has ended |
+| The page's heading names a type | A document is announcing itself, and a different type ends the one before it |
+| The same bill or report number | A page repeating its document's heading *and* its number is that document's next page |
+| A different bill or report number | Two documents of one type — two lab reports, not one of twice the length |
+| Nothing above holds | The page continues the document it is inside |
+
+A page that is unsure of itself never ends a document: an uncertain page is a worse reason to cut a
+document in half than the continuity of the one it is inside. Pages that name nothing at all become
+one document of no known type, which a reviewer can see rather than a confident wrong answer.
+
+The pages keep the numbers they have in the uploaded file. A value read from page 7 of a bundle
+says page 7 of that bundle, the page image behind it is that page, and the report keeps the file
+and the documents found inside it apart:
+
+```
+Uploaded file:   ClaimBundle.pdf — 23 pages
+Documents found: Admission record — page 2      Hospital bill — page 15
+                 Discharge summary — pages 6-8  Operative note — pages 20-21   …
+```
+
+Nothing after this step knows that a bundle was involved. Validation, the checklist, the questions,
+readiness and the report all see documents, as they always have — which is the point: the inventory
+was wrong, not the engines reading it. The test that holds this is the one that matters most: the
+same eighteen documents uploaded separately, and merged into a single file, leave the claim with
+the same documented facts, findings, checklist, questions, readiness and review.
 
 ### The canonical claim
 
@@ -458,16 +502,25 @@ a name in configuration, not an account: `approved_by` records that name, so the
 attributes a decision to a configured operator rather than to an authenticated user. Nothing here
 is ready to hold real patient data, and a pilot on real claims needs those parts built first.
 
+**Claim bundles.** A file is divided into the documents it holds before anything else reads it.
+On the synthetic demo this is exact: eighteen documents merged into one file come back as the same
+eighteen, on the right pages, and the claim means the same as it does when they are uploaded
+separately. On real claim packets it is good but not exact — the paperwork is found, the bills are
+read and the pre-authorisation forms are recognised, while some pages of a long packet are grouped
+more finely than a person would group them, and some are left unclassified rather than guessed at.
+Where the system is unsure it says so instead of choosing.
+
 **What has been verified, and how.** Backend tests run the real pipeline over the real synthetic
 documents — no mocks of OCR, extraction or rule evaluation. Beyond the suite: the demo path was
 run three times from a clean workspace and reached the same conclusions each time; the server was
 killed mid-analysis and the claim recovered to the same state as an uninterrupted run; eight
 approvals sent at once produced one approval; hostile filenames, oversized and malformed uploads,
-and documents containing instructions aimed at the AI were all refused or carried as data. What
-has **not** been done: load testing beyond a single operator, a security review by anyone else,
-any run against a real claim file, and any measurement of extraction accuracy against
-human-labelled ground truth — the accuracy of this pipeline on real hospital documents is
-unknown.
+and documents containing instructions aimed at the AI were all refused or carried as data. Two
+genuine hospital claim packets were read during development to find out how the system behaves on
+real paperwork, and deleted afterwards; nothing from them is in this repository. What has **not**
+been done: load testing beyond a single operator, a security review by anyone else, and any
+measurement of classification or extraction accuracy against human-labelled ground truth — the
+accuracy of this pipeline on real hospital documents is still unmeasured.
 
 ## License
 

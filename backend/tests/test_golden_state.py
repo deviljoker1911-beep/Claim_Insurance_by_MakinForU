@@ -208,7 +208,7 @@ GOLDEN: tuple[Golden, ...] = (
             Expect(
                 "DUPLICATE_DOCUMENT",
                 evidence=("06_Hospital_Bill.pdf", "07_Hospital_Bill_Copy.pdf"),
-                says=("same SHA-256",),
+                says=("made of the same pages",),
             ),
         ),
         checks={

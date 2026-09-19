@@ -350,15 +350,39 @@ def render(report: dict) -> str:
         )
     )
 
+    files = report.get("source_files") or []
+    if any(entry["document_count"] > 1 for entry in files):
+        parts.append(
+            _section(
+                "Uploaded files",
+                "What was handed over, and the documents found inside each file.",
+                _rows(
+                    ["File", "Pages", "Documents found"],
+                    [
+                        [
+                            _e(entry["filename"]),
+                            str(entry["page_count"] or "—"),
+                            "<br>".join(
+                                _e(f"{item['doc_type_label']} — page{'s' if len(item['page_numbers']) > 1 else ''} {item['pages']}")
+                                for item in entry["documents"]
+                            ),
+                        ]
+                        for entry in files
+                    ],
+                    numeric={1},
+                ),
+            )
+        )
+
     parts.append(
         _section(
             "Documents",
-            "Every file in this claim, as it was read.",
+            "Every document in this claim, as it was read.",
             _rows(
                 ["Document", "Type", "Pages", "Read by", "Signals", "Status"],
                 [
                     [
-                        _e(document["filename"]),
+                        _e(document["display_name"]),
                         _e(document["doc_type_label"]),
                         str(document["page_count"] or "—"),
                         _e(document["ocr_engine"] or document["text_source"]),

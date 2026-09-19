@@ -579,8 +579,15 @@ def test_a_check_with_nothing_to_examine_is_not_applicable(client, claim):
 # --- duplicate pages, end to end ---------------------------------------------------------------
 
 
-def test_a_repeated_page_inside_one_document_is_reported(client, claim):
-    """A document whose second page repeats its first: both the text and the picture match."""
+def test_one_report_twice_in_a_file_is_reported_as_the_same_document_twice(client, claim):
+    """A file made of a complete one-page report and then that report again.
+
+    Each of those pages says it is page 1 of 1 of a lab report, so the file holds that report
+    twice rather than holding one report of two pages — and the claim says so, naming the page
+    each copy sits on. The duplicate is reported either way; what changed is that it is now
+    reported as the document it is, which is also the form a person can act on by excluding the
+    extra copy.
+    """
     source = pymupdf.open(demo_path("10_Lab_Report.pdf"))
     doubled = pymupdf.open()
     doubled.insert_pdf(source)
@@ -593,18 +600,21 @@ def test_a_repeated_page_inside_one_document_is_reported(client, claim):
     assert response.status_code == 201, response.text
     analyse(client, claim["id"])
 
+    state = client.get(f"/api/claims/{claim['id']}/state").json()
+    documents = state["documents"]["items"]
+    assert len(documents) == 2, [item["filename"] for item in documents]
+    assert [item["doc_type"] for item in documents] == ["lab_report", "lab_report"]
+
     findings = client.get(f"/api/claims/{claim['id']}/findings").json()
-    duplicates = [item for item in findings["items"] if item["code"] == "DUPLICATE_PAGE"]
+    duplicates = [item for item in findings["items"] if item["code"] == "DUPLICATE_DOCUMENT"]
     assert len(duplicates) == 1, [item["code"] for item in findings["items"]]
     finding = duplicates[0]
     assert finding["severity"] == "warning"
-    assert finding["context"]["page"] == 2
-    assert finding["context"]["original_page"] == 1
-    assert finding["context"]["text_similarity"] >= 95
-    assert finding["context"]["dhash_distance"] <= 5
-    assert {item["page"] for item in finding["evidence"]} == {1, 2}
+    assert finding["context"]["document_name"] == "scan_double.pdf (page 2)"
+    assert finding["context"]["original_name"] == "scan_double.pdf (page 1)"
+    assert "exclude_duplicate" in finding["actions_available"]
     checks = {item["check_id"]: item for item in client.get(f"/api/claims/{claim['id']}/checks").json()["items"]}
-    assert checks["duplicate_pages"]["status"] == "fail"
+    assert checks["duplicate_documents"]["status"] == "fail"
 
 
 def test_different_pages_of_one_document_are_not_reported(client, claim):

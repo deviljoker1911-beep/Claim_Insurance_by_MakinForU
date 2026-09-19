@@ -120,7 +120,7 @@ def _min_words() -> int:
     return int(quality_config()["thresholds"]["min_words_for_text_page"])
 
 
-def _read_pdf(path: Path, claim_id: str, document_id: str, warnings: list[str]) -> list[_PageWork]:
+def _read_pdf(path: Path, claim_id: str, render_key: str, warnings: list[str]) -> list[_PageWork]:
     dpi = _render_dpi()
     work: list[_PageWork] = []
     with MUPDF_LOCK:
@@ -156,7 +156,7 @@ def _read_pdf(path: Path, claim_id: str, document_id: str, warnings: list[str]) 
                 item = _PageWork(page=content, needs_ocr=scanned)
                 try:
                     png, width, height = render_module.render_pdf_page(page, dpi)
-                    content.image_path = render_module.write_page_image(claim_id, document_id, number, png)
+                    content.image_path = render_module.write_page_image(claim_id, render_key, number, png)
                     content.image_width, content.image_height = width, height
                     item.gray = grayscale_from_png(png)
                 except Exception as exc:  # noqa: BLE001 — a page that will not render is reported
@@ -179,13 +179,13 @@ def _read_pdf(path: Path, claim_id: str, document_id: str, warnings: list[str]) 
     return work
 
 
-def _read_image(path: Path, claim_id: str, document_id: str, warnings: list[str]) -> list[_PageWork]:
+def _read_image(path: Path, claim_id: str, render_key: str, warnings: list[str]) -> list[_PageWork]:
     try:
         png, width, height, declared_dpi = render_module.load_image_page(path)
     except Exception as exc:  # noqa: BLE001
         raise ProcessingError(f"The image could not be read: {type(exc).__name__}") from exc
     content = PageContent(number=1, width=float(width), height=float(height), text_source=SOURCE_NONE)
-    content.image_path = render_module.write_page_image(claim_id, document_id, 1, png)
+    content.image_path = render_module.write_page_image(claim_id, render_key, 1, png)
     content.image_width, content.image_height = width, height
     content.effective_dpi = declared_dpi or render_module.estimate_image_dpi(width, height)
     item = _PageWork(page=content, needs_ocr=True, gray=grayscale_from_png(png))
@@ -196,16 +196,34 @@ def _read_image(path: Path, claim_id: str, document_id: str, warnings: list[str]
     return [item]
 
 
-def process_file(
+@dataclass
+class ReadFile:
+    """Every page of one uploaded file, read once.
+
+    Rendering, OCR and the quality measurements belong to the file, not to the documents inside
+    it: a page is read once however many documents the file turns out to hold. What the pages then
+    say is decided per document, from this.
+    """
+
+    pages: list[PageContent]
+    signature_candidates: list
+    warnings: list[str]
+    render_dpi: int | None
+    analysed_pages: list[int]
+    unavailable_pages: list[int]
+    duration_ms: int = 0
+
+
+def read_file(
     path: Path,
     *,
     content_type: str,
     sha256: str,
     claim_id: str,
-    document_id: str,
+    render_key: str,
     stage: StageCallback | None = None,
-) -> ProcessingResult:
-    """Run the whole pipeline over one stored original."""
+) -> ReadFile:
+    """Render, read and measure every page of a stored original, once."""
     started = time.monotonic()
     warnings: list[str] = []
 
@@ -219,9 +237,9 @@ def process_file(
 
     announce(STAGE_RENDERING)
     if content_type == "application/pdf":
-        work = _read_pdf(path, claim_id, document_id, warnings)
+        work = _read_pdf(path, claim_id, render_key, warnings)
     elif content_type.startswith("image/"):
-        work = _read_image(path, claim_id, document_id, warnings)
+        work = _read_image(path, claim_id, render_key, warnings)
     else:
         raise ProcessingError(f"Unsupported document type: {content_type}")
 
@@ -264,7 +282,39 @@ def process_file(
         page.quality_flags = quality.flags
         item.gray = None  # release the page bitmap
 
-    content = DocumentContent(pages=[item.page for item in work], page_render_dpi=_render_dpi())
+    return ReadFile(
+        pages=[item.page for item in work],
+        signature_candidates=[candidate for item in work for candidate in item.signature_candidates],
+        warnings=warnings,
+        render_dpi=_render_dpi(),
+        analysed_pages=[item.page.number for item in work if not item.needs_ocr],
+        unavailable_pages=[item.page.number for item in work if item.needs_ocr],
+        duration_ms=int((time.monotonic() - started) * 1000),
+    )
+
+
+def analyse_pages(
+    read: ReadFile,
+    pages: list[PageContent] | None = None,
+    *,
+    stage: StageCallback | None = None,
+) -> ProcessingResult:
+    """Say what a set of already-read pages is, and read its values.
+
+    `pages` is the document's own pages, in order; left out, it is the whole file. This is where a
+    document is classified and extracted, so one document inside a bundle and one document
+    uploaded on its own go through exactly the same steps.
+    """
+    started = time.monotonic()
+
+    def announce(name: str) -> None:
+        if stage is not None:
+            stage(name)
+        _pace()
+
+    own = list(read.pages if pages is None else pages)
+    numbers = {page.number for page in own}
+    content = DocumentContent(pages=own, page_render_dpi=read.render_dpi)
 
     announce(STAGE_CLASSIFICATION)
     classification = classify(content)
@@ -274,15 +324,12 @@ def process_file(
     fields, bill = extract_fields(content, rules.extract)
 
     announce(STAGE_EVIDENCE)
-    analysed_pages = [item.page.number for item in work if not item.needs_ocr]
-    unavailable_pages = [item.page.number for item in work if item.needs_ocr]
-    candidates = [candidate for item in work for candidate in item.signature_candidates]
     signatures = signature_module.match_expected(
-        candidates,
+        [c for c in read.signature_candidates if c.page_number in numbers],
         list(rules.signature_slots),
-        page_sizes={page.number: (page.width, page.height) for page in content.pages},
-        analysed_pages=analysed_pages,
-        unavailable_pages=unavailable_pages,
+        page_sizes={page.number: (page.width, page.height) for page in own},
+        analysed_pages=[number for number in read.analysed_pages if number in numbers],
+        unavailable_pages=[number for number in read.unavailable_pages if number in numbers],
     )
     quality_flags = _document_flags(content, signatures)
     return ProcessingResult(
@@ -292,9 +339,32 @@ def process_file(
         bill=bill,
         signatures=signatures,
         quality_flags=quality_flags,
-        warnings=warnings,
+        warnings=list(read.warnings),
         duration_ms=int((time.monotonic() - started) * 1000),
     )
+
+
+def process_file(
+    path: Path,
+    *,
+    content_type: str,
+    sha256: str,
+    claim_id: str,
+    document_id: str,
+    stage: StageCallback | None = None,
+) -> ProcessingResult:
+    """Run the whole pipeline over one stored original, read as a single document."""
+    read = read_file(
+        path,
+        content_type=content_type,
+        sha256=sha256,
+        claim_id=claim_id,
+        render_key=document_id,
+        stage=stage,
+    )
+    result = analyse_pages(read, stage=stage)
+    result.duration_ms += read.duration_ms
+    return result
 
 
 def _document_flags(content: DocumentContent, signatures: dict) -> list[dict]:
@@ -341,6 +411,9 @@ __all__ = [
     "STAGE_LABELS",
     "ProcessingError",
     "ProcessingResult",
+    "ReadFile",
     "UnreadablePdf",
+    "analyse_pages",
     "process_file",
+    "read_file",
 ]

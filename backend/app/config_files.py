@@ -55,6 +55,15 @@ def document_types_config() -> dict[str, Any]:
 
 
 @lru_cache
+def segmentation_config() -> dict[str, Any]:
+    """How the pages of one uploaded file are grouped into the documents it holds."""
+    return _load(
+        "segmentation.yaml",
+        ("document_identifiers", "page_numbering", "min_pages_to_segment"),
+    )
+
+
+@lru_cache
 def quality_config() -> dict[str, Any]:
     return _load("quality.yaml", ("thresholds", "severity", "render_dpi"))
 
@@ -188,3 +197,4 @@ def reload_configs() -> None:
     rules_config.cache_clear()
     checklists_config.cache_clear()
     readiness_config.cache_clear()
+    segmentation_config.cache_clear()

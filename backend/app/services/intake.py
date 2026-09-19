@@ -78,6 +78,10 @@ def ingest_files(
             document = Document(
                 id=item.document_id,
                 claim=claim,
+                # The file is its own source until it has been read; reading it may find that it
+                # holds several documents, and each of those points back here.
+                source_file_id=item.document_id,
+                segment_index=0,
                 original_filename=item.filename,
                 content_type=item.content_type,
                 declared_content_type=item.declared_content_type,

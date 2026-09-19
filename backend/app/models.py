@@ -96,6 +96,42 @@ class Document(Base):
     uploaded_by: Mapped[str] = mapped_column(String(120))
     uploaded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
+    # --- claim bundles (phase 11) ---
+    # One uploaded file can hold several documents: a claim packet is usually one PDF holding the
+    # pre-authorisation form, the bills, the reports and the discharge summary one after another.
+    # Every document read out of a file shares that file's id here and keeps the pages of the file
+    # it was read from, so a value read from page 7 of a bundle still says page 7 of that bundle.
+    # A file holding one document is the same thing with one segment covering every page.
+    source_file_id: Mapped[str] = mapped_column(String(36), index=True)
+    source_page_count: Mapped[int | None] = mapped_column(Integer)
+    page_numbers: Mapped[list] = mapped_column(JSONType, default=list)
+    segment_index: Mapped[int] = mapped_column(Integer, default=0)
+    # How the pages came to be grouped as one document, for a person asking why.
+    segment_basis: Mapped[dict] = mapped_column(JSONType, default=dict)
+
+    @property
+    def page_span(self) -> str | None:
+        """"7" or "13-16": the pages of the uploaded file this document was read from."""
+        pages = self.page_numbers or []
+        if not pages:
+            return None
+        return str(pages[0]) if len(pages) == 1 else f"{pages[0]}-{pages[-1]}"
+
+    @property
+    def is_part_of_a_bundle(self) -> bool:
+        """Whether the file this came from holds other documents as well."""
+        pages = self.page_numbers or []
+        return bool(pages) and self.source_page_count is not None and len(pages) < self.source_page_count
+
+    @property
+    def display_name(self) -> str:
+        """What to call this document: the file it arrived in, and where in it, when that matters."""
+        if not self.is_part_of_a_bundle:
+            return self.original_filename
+        pages = self.page_numbers or []
+        label = "page" if len(pages) == 1 else "pages"
+        return f"{self.original_filename} ({label} {self.page_span})"
+
     # --- questions (phase 7) ---
     # Set when the document was uploaded in answer to a question, so the audit trail can show
     # the request and the document that answered it as one story.
@@ -174,6 +210,15 @@ class DocumentPage(Base):
     text: Mapped[str] = mapped_column(Text, default="")
     quality: Mapped[dict] = mapped_column(JSONType, default=dict)
     quality_flags: Mapped[list] = mapped_column(JSONType, default=list)
+
+    # --- claim bundles (phase 11) ---
+    # What this page looks like read on its own, before the pages of a file are grouped into
+    # documents. It is what the grouping is decided from, and it is kept so a person can see why
+    # a page landed where it did.
+    page_type: Mapped[str | None] = mapped_column(String(48))
+    page_type_confidence: Mapped[float | None] = mapped_column(Float)
+    page_type_method: Mapped[str | None] = mapped_column(String(32))
+
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     document: Mapped[Document] = relationship(back_populates="pages")

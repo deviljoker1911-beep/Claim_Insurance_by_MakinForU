@@ -451,12 +451,28 @@ def _draw(report: dict, total_pages: int | None) -> tuple[bytes, int]:
         empty="No bill has been read for this claim.",
     )
 
-    doc.heading("Documents", "Every file in this claim, as it was read.")
+    files = report.get("source_files") or []
+    if any(entry["document_count"] > 1 for entry in files):
+        doc.heading("Uploaded files", "What was handed over, and the documents found inside each file.")
+        doc.table(
+            ["File", "Pages", "Documents found"],
+            [
+                [
+                    entry["filename"],
+                    str(entry["page_count"] or "—"),
+                    "; ".join(f"{item['doc_type_label']} pp. {item['pages']}" for item in entry["documents"]),
+                ]
+                for entry in files
+            ],
+            [0.34, 0.10, 0.56],
+        )
+
+    doc.heading("Documents", "Every document in this claim, as it was read.")
     doc.table(
         ["Document", "Type", "Pages", "Read by", "Signals", "Status"],
         [
             [
-                document["filename"],
+                document["display_name"],
                 _text(document["doc_type_label"]),
                 str(document["page_count"] or "—"),
                 _text(document["ocr_engine"] or document["text_source"]),

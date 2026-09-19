@@ -11,6 +11,7 @@ The engine reads; it never writes. Storing findings and moving them through thei
 
 from __future__ import annotations
 
+import hashlib
 import logging
 from dataclasses import dataclass, field
 from decimal import Decimal, InvalidOperation
@@ -93,6 +94,28 @@ class Context:
     state: dict
     documents: list[Document]
     pages: dict[str, list[DocumentPage]]
+    # Page fingerprints are read from the rendered images, so they are worked out once per run and
+    # shared by the checks that need them.
+    dhashes: dict[str, int | None] = field(default_factory=dict)
+
+    def dhash(self, page: DocumentPage) -> int | None:
+        if page.image_path not in self.dhashes:
+            self.dhashes[page.image_path] = dup.page_dhash(page.image_path)
+        return self.dhashes[page.image_path]
+
+    def content_key(self, document: Document) -> str:
+        """What a document is made of: the text and the picture of each of its pages, in order.
+
+        A document used to be identified by the bytes of the file it arrived in. That identifies a
+        file, and one file can hold a dozen documents — every document in a claim packet would
+        have looked like a copy of every other. What makes two documents the same document is that
+        they are made of the same pages, whether they arrived as two files or twice inside one.
+        """
+        pages = sorted(self.pages.get(document.id, []), key=lambda item: item.page_number)
+        if not pages:
+            return ""
+        parts = [f"{nz.squash(page.text or '')}|{self.dhash(page)}" for page in pages]
+        return hashlib.sha256("\n".join(parts).encode("utf-8")).hexdigest()
 
     @property
     def active(self) -> list[Document]:
@@ -912,7 +935,10 @@ def check_duplicate_documents(ctx: Context) -> CheckOutcome:
 
     groups: dict[str, list[Document]] = {}
     for document in active:
-        groups.setdefault(document.sha256, []).append(document)
+        key = ctx.content_key(document)
+        if not key:
+            continue  # a document with no readable pages is not evidence of a copy
+        groups.setdefault(key, []).append(document)
     outcome.subjects_checked = len(groups)
     for digest, documents in sorted(groups.items()):
         if len(documents) < 2:
@@ -922,10 +948,10 @@ def check_duplicate_documents(ctx: Context) -> CheckOutcome:
             outcome.findings.append(
                 build(
                     "DUPLICATE_DOCUMENT",
-                    f"duplicate_document:{digest}:{copy.original_filename}",
+                    f"duplicate_document:{digest}:{copy.original_filename}:{copy.page_span or 'all'}",
                     context={
-                        "document_name": copy.original_filename,
-                        "original_name": original.original_filename,
+                        "document_name": copy.display_name,
+                        "original_name": original.display_name,
                         "sha256_short": digest[:12],
                         "sha256": digest,
                         "document_id": copy.id,
@@ -937,8 +963,8 @@ def check_duplicate_documents(ctx: Context) -> CheckOutcome:
                             document=copy,
                             page=1,
                             bounding_box=[0.0, 0.0, 1.0, 1.0],
-                            snippet=f"SHA-256 {digest[:24]}…",
-                            method="sha256",
+                            snippet=f"Content fingerprint {digest[:24]}…",
+                            method="content_fingerprint",
                             detail="the extra copy",
                         ),
                         _evidence(
@@ -946,8 +972,8 @@ def check_duplicate_documents(ctx: Context) -> CheckOutcome:
                             document=original,
                             page=1,
                             bounding_box=[0.0, 0.0, 1.0, 1.0],
-                            snippet=f"SHA-256 {digest[:24]}…",
-                            method="sha256",
+                            snippet=f"Content fingerprint {digest[:24]}…",
+                            method="content_fingerprint",
                             detail="the copy already in the claim",
                         ),
                     ],

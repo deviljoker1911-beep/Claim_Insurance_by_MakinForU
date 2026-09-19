@@ -138,18 +138,33 @@ def clear_results(session: Session, document: Document) -> None:
     document.bill = None
 
 
-def store_result(session: Session, document: Document, result: ProcessingResult) -> None:
-    """Write a completed pipeline run to the database."""
+def store_result(
+    session: Session,
+    document: Document,
+    result: ProcessingResult,
+    *,
+    page_reads: dict | None = None,
+) -> None:
+    """Write a completed pipeline run to the database.
+
+    `page_reads` is what each page looked like read on its own, by page number, kept so a reader
+    of a document found inside a bundle can see why its pages were grouped as one document.
+    """
     clear_results(session, document)
     content = result.content
     sizes = {page.number: (page.width, page.height) for page in content.pages}
+    reads = page_reads or {}
 
     for page in content.pages:
+        read = reads.get(page.number)
         session.add(
             DocumentPage(
                 document_id=document.id,
                 claim_id=document.claim_id,
                 page_number=page.number,
+                page_type=read.doc_type if read else None,
+                page_type_confidence=read.confidence if read else None,
+                page_type_method=read.method if read else None,
                 width=page.width,
                 height=page.height,
                 image_path=page.image_path,

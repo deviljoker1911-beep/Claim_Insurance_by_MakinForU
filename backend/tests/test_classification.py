@@ -100,7 +100,7 @@ def test_an_empty_document_is_unclassified_rather_than_guessed():
 def test_every_configured_type_is_usable():
     config = document_types_config()
     keys = [entry["key"] for entry in config["types"]]
-    assert len(keys) == 19, keys
+    assert len(keys) == 20, keys
     for key, rules in type_rules().items():
         if key == "other":
             continue

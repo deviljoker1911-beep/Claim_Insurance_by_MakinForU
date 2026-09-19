@@ -234,10 +234,11 @@ rules:
     category: duplicates
     severity: warning
     attribution: rule
-    title: "{document_name} is byte-identical to {original_name}"
+    title: "{document_name} is the same document as {original_name}"
     explanation: >-
-      Both files have the same SHA-256 fingerprint ({sha256_short}), so they are the same
-      document uploaded twice. Only one copy needs to go with the claim.
+      Both are made of the same pages — the same text and the same picture on each of them
+      ({sha256_short}) — so the claim holds this document twice, whether it arrived as two files
+      or twice inside one. Only one copy needs to go with the claim.
     action: "Exclude the extra copy from the claim, or keep both if the insurer asked for them."
     evidence: required
 

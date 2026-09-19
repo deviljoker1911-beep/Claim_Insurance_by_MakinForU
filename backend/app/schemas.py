@@ -288,6 +288,11 @@ class PageOut(BaseModel):
     char_count: int
     word_count: int
     concealed_count: int
+    # What this page looked like read on its own, before the pages of its file were grouped into
+    # documents. It is what the grouping was decided from.
+    page_type: str | None = None
+    page_type_confidence: float | None = None
+    page_type_method: str | None = None
     quality: dict[str, Any] = {}
     quality_flags: list[QualityFlagOut] = []
 
@@ -491,8 +496,12 @@ class InvestigationsSectionOut(BaseModel):
 
 
 class DocumentInventoryItemOut(BaseModel):
+    """One document of the claim, which may be one of several inside a single uploaded file."""
+
     document_id: str
     filename: str
+    # The filename, with the pages when the file it came from holds more than this document.
+    display_name: str | None = None
     doc_type: str | None = None
     doc_type_label: str | None = None
     classification_confidence: float | None = None
@@ -501,6 +510,15 @@ class DocumentInventoryItemOut(BaseModel):
     processing_stage: str | None = None
     processing_error: str | None = None
     page_count: int | None = None
+    # --- the uploaded file this document was read out of ---
+    # Documents read from one file share `source_file_id`; `page_numbers` are that file's own page
+    # numbers, which is what every piece of evidence points at.
+    source_file_id: str | None = None
+    source_page_count: int | None = None
+    page_numbers: list[int] = []
+    page_span: str | None = None
+    is_part_of_a_bundle: bool = False
+    segment_index: int = 0
     quality_signals: list[QualityFlagOut] = []
     quality_signal_count: int = 0
     ocr_method: str | None = None
@@ -1138,6 +1156,7 @@ class ReportResponse(BaseModel):
     questions: list[dict[str, Any]] = []
     human_decisions: list[dict[str, Any]] = []
     unresolved: list[dict[str, Any]] = []
+    source_files: list[dict[str, Any]] = []
     documents: list[dict[str, Any]] = []
     bills: dict[str, Any]
     investigations: list[dict[str, Any]] = []

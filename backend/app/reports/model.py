@@ -308,10 +308,49 @@ def _unresolved(state: dict, questions: list[dict]) -> list[dict]:
     return items
 
 
+def _source_files(state: dict) -> list[dict]:
+    """The files that were uploaded, and the documents each of them turned out to hold.
+
+    A claim packet arrives as one file holding many documents. The report keeps the two apart: a
+    reader needs to know both what was handed over and what was found inside it.
+    """
+    files: dict[str, dict] = {}
+    for document in state["documents"]["items"]:
+        key = document.get("source_file_id") or document["document_id"]
+        entry = files.setdefault(
+            key,
+            {
+                "filename": document["filename"],
+                "page_count": document.get("source_page_count") or document["page_count"],
+                "sha256": document["sha256"],
+                "size_bytes": document["size_bytes"],
+                "source": document["source"],
+                "uploaded_at": document["uploaded_at"],
+                "documents": [],
+            },
+        )
+        entry["documents"].append(
+            {
+                "doc_type": document["doc_type"],
+                "doc_type_label": document["doc_type_label"],
+                "pages": document.get("page_span"),
+                "page_numbers": list(document.get("page_numbers") or []),
+                "excluded": document["excluded"],
+            }
+        )
+    for entry in files.values():
+        entry["document_count"] = len(entry["documents"])
+    return sorted(files.values(), key=lambda entry: (entry["filename"], entry["uploaded_at"] or ""))
+
+
 def _documents(state: dict) -> list[dict]:
     return [
         {
             "filename": document["filename"],
+            "display_name": document.get("display_name") or document["filename"],
+            "pages": document.get("page_span"),
+            "page_numbers": list(document.get("page_numbers") or []),
+            "is_part_of_a_bundle": document.get("is_part_of_a_bundle", False),
             "doc_type": document["doc_type"],
             "doc_type_label": document["doc_type_label"],
             "classification_confidence": document["classification_confidence"],
@@ -481,6 +520,7 @@ def build(session: Session, claim: Claim, *, generated_at: datetime | None = Non
         "questions": question_rows,
         "human_decisions": _human_decisions(state, finding_rows, question_rows, claim, events),
         "unresolved": _unresolved(state, question_rows),
+        "source_files": _source_files(state),
         "documents": _documents(state),
         "bills": _bills(state),
         "investigations": [

@@ -20,7 +20,7 @@ from app.storage import remove_all_claim_storage
 
 logger = logging.getLogger("claimai.workspace")
 
-WORKSPACE_SCHEMA_VERSION = 9
+WORKSPACE_SCHEMA_VERSION = 10
 SCHEMA_VERSION_KEY = "workspace_schema_version"
 
 

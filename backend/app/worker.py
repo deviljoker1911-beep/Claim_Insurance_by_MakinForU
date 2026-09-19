@@ -17,8 +17,10 @@ import threading
 
 from app.db import SessionLocal
 from app.models import Document
-from app.processing.pipeline import ProcessingError, process_file
+from app.processing.pipeline import ProcessingError, read_file
+from app.segmentation import engine as segmentation_engine
 from app.services import analysis
+from app.services import segmentation as segmentation_service
 from app.services.locks import WORKSPACE_LOCK
 from app.storage import absolute_storage_path
 
@@ -157,14 +159,18 @@ class ProcessingWorker:
                 path = absolute_storage_path(document.storage_path)
                 analysis.mark_started(session, document)
                 try:
-                    result = process_file(
+                    # The file is read once — rendered, OCR'd and measured — and then grouped into
+                    # the documents it holds. A file holding one document yields one group, which
+                    # is the path every upload has always taken.
+                    read = read_file(
                         path,
                         content_type=document.content_type,
                         sha256=document.sha256,
                         claim_id=claim_id,
-                        document_id=document.id,
+                        render_key=document.source_file_id,
                         stage=lambda name: analysis.set_stage(session, document, name),
                     )
+                    segments = segmentation_engine.segment(read)
                 except ProcessingError as exc:
                     logger.warning("Document %s could not be processed: %s", document.original_filename, exc)
                     analysis.mark_failed(session, document, str(exc))
@@ -174,8 +180,12 @@ class ProcessingWorker:
                     analysis.mark_failed(session, document, f"{type(exc).__name__}: {exc}")
                     self._failed += 1
                 else:
-                    analysis.store_result(session, document, result)
+                    stored = segmentation_service.store(session, document, read, segments)
                     self._processed += 1
+                    if len(stored) > 1:
+                        logger.info(
+                            "%s held %d documents", document.original_filename, len(stored)
+                        )
                 analysis.finish_claim_if_done(session, claim_id)
 
 

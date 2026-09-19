@@ -348,7 +348,10 @@ export interface BillTotal {
 
 export interface DocumentInventoryItem {
   document_id: string
+  /** The file this document arrived in. One file can hold several documents. */
   filename: string
+  /** The filename, with the pages when the file holds more than this document. */
+  display_name: string | null
   doc_type: string | null
   doc_type_label: string | null
   classification_confidence: number | null
@@ -357,6 +360,13 @@ export interface DocumentInventoryItem {
   processing_stage: string | null
   processing_error: string | null
   page_count: number | null
+  /** Where in the uploaded file this document sits. Documents of one file share source_file_id. */
+  source_file_id: string | null
+  source_page_count: number | null
+  page_numbers: number[]
+  page_span: string | null
+  is_part_of_a_bundle: boolean
+  segment_index: number
   quality_signals: QualityFlag[]
   quality_signal_count: number
   ocr_method: string | null

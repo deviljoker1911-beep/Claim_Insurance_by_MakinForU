@@ -171,14 +171,14 @@ def test_an_unexpected_error_is_contained(client, claim, worker, monkeypatch):
     from app import worker as worker_module
 
     documents = attach(client, claim["id"], "02_Admission_Form.pdf", "10_Lab_Report.pdf")
-    real = worker_module.process_file
+    real = worker_module.read_file
 
     def explode(path, **kwargs):
-        if kwargs["document_id"] == documents[0]["id"]:
+        if kwargs["render_key"] == documents[0]["id"]:
             raise MemoryError("simulated native failure")
         return real(path, **kwargs)
 
-    monkeypatch.setattr(worker_module, "process_file", explode)
+    monkeypatch.setattr(worker_module, "read_file", explode)
     state = analyse(client, claim["id"])
     assert state["counts"] == {"pending": 0, "queued": 0, "processing": 0, "processed": 1, "failed": 1}
     failed = next(d for d in state["documents"] if d["document_id"] == documents[0]["id"])
@@ -190,11 +190,11 @@ def test_failed_documents_are_retried_by_a_new_analysis_run(client, claim, worke
     from app import worker as worker_module
 
     documents = attach(client, claim["id"], "02_Admission_Form.pdf")
-    real = worker_module.process_file
-    monkeypatch.setattr(worker_module, "process_file", lambda path, **kwargs: (_ for _ in ()).throw(RuntimeError("nope")))
+    real = worker_module.read_file
+    monkeypatch.setattr(worker_module, "read_file", lambda path, **kwargs: (_ for _ in ()).throw(RuntimeError("nope")))
     assert analyse(client, claim["id"])["counts"]["failed"] == 1
 
-    monkeypatch.setattr(worker_module, "process_file", real)
+    monkeypatch.setattr(worker_module, "read_file", real)
     state = analyse(client, claim["id"])
     assert state["counts"]["processed"] == 1
     assert state["counts"]["failed"] == 0
