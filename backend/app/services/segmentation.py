@@ -24,7 +24,7 @@ from sqlalchemy.orm import Session
 from app.audit import record_event
 from app.config_files import quality_config
 from app.models import Document
-from app.processing.pipeline import ReadFile, analyse_pages
+from app.processing.pipeline import STAGE_CLASSIFICATION, ReadFile, analyse_pages
 from app.segmentation.engine import Segment
 from app.text import plural
 from app.services import analysis as analysis_service
@@ -113,12 +113,24 @@ def store(session: Session, source: Document, read: ReadFile, segments: list[Seg
     """
     existing = _siblings(session, source)
     page_count = len(read.pages)
-    documents: list[Document] = []
+    stored: dict[int, Document] = {}
 
-    for index, segment in enumerate(segments):
+    # While its documents are being classified, that is the stage the file is at: it was left
+    # showing the last stage of reading it, which is behind the work actually going on.
+    if len(segments) > 1:
+        analysis_service.set_stage(session, source, STAGE_CLASSIFICATION)
+
+    # The file's own row is finished last. Everything that asks whether a claim has been read
+    # asks its documents, and each document is written as it is analysed, so finishing the
+    # file's row first would leave the claim reporting itself completely read at the moment the
+    # first of its documents landed — with the rest of them still to come. Held open until the
+    # last one is written, the claim says it is still being read for exactly as long as it is.
+    for index in [*range(1, len(segments)), 0]:
+        segment = segments[index]
         document = source if index == 0 else _document_for(session, source, index, existing)
         result = analyse_pages(read, segment.pages)
-        result.duration_ms += read.duration_ms if index == 0 else 0
+        if index == 0:
+            result.duration_ms += read.duration_ms
         document.source_file_id = source.source_file_id
         document.segment_index = index
         document.page_numbers = segment.page_numbers
@@ -131,7 +143,11 @@ def store(session: Session, source: Document, read: ReadFile, segments: list[Seg
             page_reads={item.number: item for item in segment.page_reads},
         )
         _note_uncertainty(document, segment)
-        documents.append(document)
+        stored[index] = document
+
+    # Back into the order they appear in the file, which is the order everything downstream
+    # reports them in.
+    documents: list[Document] = [stored[index] for index in range(len(segments))]
 
     # A file read again may hold fewer documents than it did before: anything left over belonged to
     # a reading that no longer stands.

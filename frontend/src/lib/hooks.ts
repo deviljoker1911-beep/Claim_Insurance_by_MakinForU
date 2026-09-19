@@ -221,13 +221,10 @@ export function useFindingAction(claimId: string) {
         method: 'POST',
         body: JSON.stringify({ action, note: note ?? null }),
       }),
-    onSuccess: () =>
-      Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['claims', claimId, 'findings'] }),
-        queryClient.invalidateQueries({ queryKey: ['claims', claimId, 'checks'] }),
-        queryClient.invalidateQueries({ queryKey: ['claims', claimId, 'checklist'] }),
-        queryClient.invalidateQueries({ queryKey: ['claims', claimId, 'state'] }),
-      ]),
+    // Acting on a finding moves readiness and is a change the claim records, so every view of
+    // the claim is refreshed. Refreshing only the findings left the score, and the approval it
+    // gates, showing the claim as it was before the finding was dealt with.
+    onSuccess: () => claimViews(queryClient, claimId),
   })
 }
 

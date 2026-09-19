@@ -34,6 +34,10 @@ export function ReadinessCard({ readiness, claimId }: { readiness: ReadinessResp
   const status = STATUS[readiness.status]
   const Icon = status.icon
   const { review, breakdown } = readiness
+  // The findings this many is about are the ones the breakdown charges for. A finding that costs
+  // nothing is still weighed, but printing it in the count would leave a number beside the
+  // working that the working never accounts for.
+  const chargedFindings = breakdown.deductions.filter((item) => item.source.kind === 'finding').length
 
   return (
     <div data-testid="readiness-card" data-status={readiness.status} data-score={readiness.score}>
@@ -147,9 +151,7 @@ export function ReadinessCard({ readiness, claimId }: { readiness: ReadinessResp
           {readiness.summary.documented_unavailable > 0 && (
             <span>{readiness.summary.documented_unavailable} documented unavailable</span>
           )}
-          {readiness.summary.counted_findings > 0 && (
-            <span>{plural(readiness.summary.counted_findings, 'finding')} counted</span>
-          )}
+          {chargedFindings > 0 && <span>{plural(chargedFindings, 'finding')} counted</span>}
           {breakdown.deductions.length > 0 && (
             <button
               type="button"

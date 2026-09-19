@@ -167,7 +167,7 @@ def _satisfying_document(session: Session, claim_id: str, question: Question) ->
     """The document that answers a question: the one uploaded for it, else the earliest of the type."""
     expected = set(question.expected_document_types or [question.expected_document_type])
     documents = session.scalars(
-        select(Document).where(Document.claim_id == claim_id).order_by(Document.uploaded_at, Document.original_filename)
+        select(Document).where(Document.claim_id == claim_id).order_by(Document.uploaded_at, Document.original_filename, Document.segment_index)
     ).all()
     usable = [
         document

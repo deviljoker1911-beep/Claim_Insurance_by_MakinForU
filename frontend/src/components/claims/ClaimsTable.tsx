@@ -1,13 +1,28 @@
 import { CircleAlert, FolderKanban, Plus } from 'lucide-react'
 import { Link, useNavigate } from 'react-router'
 
+import { cx } from '../../lib/cx'
 import { splitDateTime } from '../../lib/format'
-import { useClaims } from '../../lib/hooks'
+import { useClaims, useDashboard } from '../../lib/hooks'
+import type { ReadinessStatus } from '../../lib/types'
 import { Badge } from '../ui/Badge'
 import { Button, ButtonLink } from '../ui/Button'
 import { EmptyState } from '../ui/EmptyState'
 import { Skeleton } from '../ui/Skeleton'
+import type { Tone } from '../ui/styles'
 import { ClaimStatusBadge } from './ClaimStatusBadge'
+
+const STATUS_TONE: Record<ReadinessStatus, Tone> = {
+  incomplete: 'danger',
+  needs_attention: 'warning',
+  ready_for_human_review: 'success',
+}
+
+const BAR: Record<ReadinessStatus, string> = {
+  incomplete: 'bg-rose-500',
+  needs_attention: 'bg-amber-500',
+  ready_for_human_review: 'bg-emerald-500',
+}
 
 const COLUMNS = [
   'Claim ID',
@@ -23,8 +38,13 @@ const COLUMNS = [
 
 export function ClaimsTable({ limit }: { limit?: number }) {
   const claims = useClaims()
+  // What a claim was read as, what is open on it and how ready it is are counted per claim by
+  // the workspace summary. The columns for them stood empty while the numbers were a request
+  // away, so every claim in this table read as one nobody had analysed.
+  const dashboard = useDashboard()
   const navigate = useNavigate()
   const rows = claims.data ? claims.data.slice(0, limit) : []
+  const summary = new Map((dashboard.data?.claims ?? []).map((claim) => [claim.claim_id, claim]))
 
   return (
     <div className="overflow-x-auto">
@@ -87,6 +107,7 @@ export function ClaimsTable({ limit }: { limit?: number }) {
 
           {rows.map((claim) => {
             const updated = splitDateTime(claim.updated_at)
+            const detail = summary.get(claim.id)
             return (
               <tr
                 key={claim.id}
@@ -113,10 +134,35 @@ export function ClaimsTable({ limit }: { limit?: number }) {
                   <p className="text-xs text-slate-500">{claim.uhid}</p>
                 </td>
                 <td className="min-w-[10rem] px-3 py-3.5 text-slate-700">{claim.hospital}</td>
-                <td className="px-3 py-3.5 whitespace-nowrap text-slate-400">Not analysed</td>
+                <td className="max-w-[12rem] truncate px-3 py-3.5 text-slate-700" title={detail?.procedure ?? undefined}>
+                  {detail?.procedure ?? <span className="text-slate-400">—</span>}
+                </td>
                 <td className="px-3 py-3.5 text-slate-700 tabular-nums">{claim.document_count}</td>
-                <td className="px-3 py-3.5 text-slate-400">—</td>
-                <td className="px-3 py-3.5 text-slate-400">—</td>
+                <td className="px-3 py-3.5 tabular-nums">
+                  {detail === undefined ? (
+                    <span className="text-slate-400">—</span>
+                  ) : detail.open_findings > 0 ? (
+                    <span className="font-medium text-amber-700">{detail.open_findings}</span>
+                  ) : (
+                    <span className="text-slate-400">0</span>
+                  )}
+                </td>
+                <td className="px-3 py-3.5">
+                  {detail === undefined ? (
+                    <span className="text-slate-400">—</span>
+                  ) : (
+                    <span className="flex items-center gap-2">
+                      <span className="h-1.5 w-16 overflow-hidden rounded-full bg-slate-100">
+                        <span
+                          className={cx('block h-full rounded-full', BAR[detail.readiness_status])}
+                          style={{ width: `${Math.max(detail.readiness_score, 2)}%` }}
+                        />
+                      </span>
+                      <span className="font-semibold text-slate-900 tabular-nums">{detail.readiness_score}%</span>
+                      <Badge tone={STATUS_TONE[detail.readiness_status]}>{detail.readiness_status_label}</Badge>
+                    </span>
+                  )}
+                </td>
                 <td className="px-3 py-3.5 whitespace-nowrap">
                   <ClaimStatusBadge status={claim.status} />
                 </td>

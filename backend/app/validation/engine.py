@@ -1378,7 +1378,7 @@ def build_context(session: Session, claim: Claim, state: dict | None = None) -> 
         session.scalars(
             select(Document)
             .where(Document.claim_id == claim.id)
-            .order_by(Document.uploaded_at, Document.original_filename)
+            .order_by(Document.uploaded_at, Document.original_filename, Document.segment_index)
         ).all()
     )
     pages: dict[str, list[DocumentPage]] = {}

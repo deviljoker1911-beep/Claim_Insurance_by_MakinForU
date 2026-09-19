@@ -489,7 +489,7 @@ def build_claim_state(session: Session, claim: Claim) -> dict:
         session.scalars(
             select(Document)
             .where(Document.claim_id == claim.id)
-            .order_by(Document.uploaded_at, Document.original_filename)
+            .order_by(Document.uploaded_at, Document.original_filename, Document.segment_index)
         ).all()
     )
     by_id = {document.id: document for document in documents}

@@ -54,7 +54,7 @@ def queue_documents(session: Session, claim: Claim, *, actor: str | None = None,
     documents = session.scalars(
         select(Document)
         .where(Document.claim_id == claim.id, Document.processing_status.in_(statuses))
-        .order_by(Document.uploaded_at, Document.original_filename)
+        .order_by(Document.uploaded_at, Document.original_filename, Document.segment_index)
     ).all()
     now = utcnow()
     for document in documents:
@@ -428,7 +428,7 @@ def claim_state(session: Session, claim: Claim) -> dict:
     documents = session.scalars(
         select(Document)
         .where(Document.claim_id == claim.id)
-        .order_by(Document.uploaded_at, Document.original_filename)
+        .order_by(Document.uploaded_at, Document.original_filename, Document.segment_index)
     ).all()
     counts = {status: 0 for status in (STATUS_PENDING, *ACTIVE_STATUSES, STATUS_PROCESSED, STATUS_FAILED)}
     for document in documents:

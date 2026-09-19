@@ -47,7 +47,11 @@ def build(state: dict) -> list[dict]:
     counts = state["meta"]["document_counts"]
     documents = state["documents"]
     processed = counts.get("processed", 0)
-    in_flight = sum(counts.get(status, 0) for status in ("pending", "queued", "processing"))
+    # Apart in the wording: a queued document is on its way through, an attached one is waiting
+    # for someone to start the analysis.
+    being_read = sum(counts.get(status, 0) for status in ("queued", "processing"))
+    attached_unread = counts.get("pending", 0)
+    in_flight = being_read + attached_unread
     findings = state["findings"]
     checklist = state["checklist"]
     questions = state["questions"]
@@ -63,8 +67,10 @@ def build(state: dict) -> list[dict]:
 
     if documents["count"] == 0:
         steps.append(_step(PROCESSING, PENDING, "Waiting for documents."))
-    elif in_flight:
-        steps.append(_step(PROCESSING, CURRENT, f"{plural(in_flight, 'document')} still being read."))
+    elif being_read:
+        steps.append(_step(PROCESSING, CURRENT, f"{plural(being_read, 'document')} still being read."))
+    elif attached_unread:
+        steps.append(_step(PROCESSING, CURRENT, f"{plural(attached_unread, 'document')} waiting to be read."))
     elif processed:
         steps.append(_step(PROCESSING, COMPLETE, f"{plural(processed, 'document')} read."))
     else:

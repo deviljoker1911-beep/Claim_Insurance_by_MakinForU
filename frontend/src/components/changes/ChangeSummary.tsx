@@ -1,4 +1,4 @@
-import { ArrowRight, CircleCheck, CircleHelp, FilePlus2, ListChecks, TriangleAlert, Waypoints } from 'lucide-react'
+import { CircleCheck, CircleHelp, FilePlus2, ListChecks, TriangleAlert, Waypoints } from 'lucide-react'
 import { useState, type ComponentType } from 'react'
 
 import type { Change, ChangeKind, ReanalysisRun } from '../../lib/types'
@@ -71,6 +71,7 @@ function Counts({ run }: { run: ReanalysisRun }) {
   // added reads "1 document added" and ten read "10 documents added".
   const counts: Array<[string, string, number, Tone]> = [
     ['document added', 'documents added', run.summary.documents_added, 'brand'],
+    ['question asked', 'questions asked', run.summary.questions_asked, 'info'],
     ['question resolved', 'questions resolved', run.summary.questions_resolved, 'success'],
     ['finding closed', 'findings closed', run.summary.findings_auto_closed, 'success'],
     ['finding opened', 'findings opened', run.summary.findings_opened, 'warning'],
@@ -78,7 +79,13 @@ function Counts({ run }: { run: ReanalysisRun }) {
     ['value changed', 'values changed', run.summary.canonical_changed, 'neutral'],
   ]
   const shown = counts.filter(([, , total]) => total > 0)
-  if (shown.length === 0) return <Badge tone="neutral">No change in the last pass</Badge>
+  // Not every change is one of the counts above — answering a question is a change these six do
+  // not name. The heading still has to agree with the list beneath it, so a pass that changed
+  // something says how much rather than saying nothing changed.
+  if (shown.length === 0) {
+    if (run.summary.changes === 0) return <Badge tone="neutral">No change in the last pass</Badge>
+    return <Badge tone="neutral">{plural(run.summary.changes, 'change', 'changes')}</Badge>
+  }
   return (
     <>
       {shown.map(([singular, pluralForm, total, tone]) => (
@@ -99,14 +106,9 @@ function ChangeRow({ change }: { change: Change }) {
         <Icon className="size-3" />
       </span>
       <span className="min-w-0">
+        {/* The headline already reads "was → is" wherever a change has both, so it is not
+            repeated here. */}
         <span className="text-slate-700">{change.headline}</span>
-        {change.before !== null && change.after !== null && (
-          <span className="ml-1.5 inline-flex items-center gap-1 text-xs text-slate-400">
-            <span>{String(change.before).replaceAll('_', ' ')}</span>
-            <ArrowRight className="size-3" />
-            <span>{String(change.after).replaceAll('_', ' ')}</span>
-          </span>
-        )}
         {change.after === 'found' && <CircleCheck className="ml-1 inline size-3.5 text-emerald-600" />}
       </span>
     </li>

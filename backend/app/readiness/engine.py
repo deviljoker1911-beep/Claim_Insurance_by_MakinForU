@@ -254,6 +254,12 @@ def evaluate(state: dict, questions: list[dict]) -> dict:
         # Some of the claim has been read and some has not. Whatever the part that was read adds
         # up to, it is not the claim, so the claim is not ready for a person to decide on and the
         # score is not the score it will settle at.
+        # A document already queued or being read will be read without anyone doing anything; a
+        # document only attached waits for a person to start the analysis. Telling that person to
+        # wait for a run that is not happening leaves them waiting for nothing.
+        being_read = [
+            document for document in still_reading if document["processing_status"] != "pending"
+        ]
         detail = (
             f"Waiting for {len(still_reading)} of {len(included)} documents to be read. "
             "Readiness is counted from the documents as they are read."
@@ -262,9 +268,13 @@ def evaluate(state: dict, questions: list[dict]) -> dict:
             {
                 "kind": "document",
                 "key": "reading",
-                "label": "Documents still being read",
+                "label": "Documents still being read" if being_read else "Documents not read yet",
                 "detail": detail,
-                "action": "Wait for the analysis to finish; readiness is counted again as each document is read.",
+                "action": (
+                    "Wait for the analysis to finish; readiness is counted again as each document is read."
+                    if being_read
+                    else "Run the analysis; readiness is counted again as each document is read."
+                ),
             }
         )
     elif missing_without_response:

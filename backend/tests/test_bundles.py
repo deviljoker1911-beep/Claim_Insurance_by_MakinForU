@@ -363,6 +363,60 @@ def test_a_merged_claim_reads_the_same_bills(two_ways):
     assert two_ways["bundled"]["bills"] == two_ways["separate"]["bills"]
 
 
+def test_the_documents_of_a_file_are_listed_in_the_order_they_appear_in_it(client, workspace):
+    """A reader going through a packet reads it front to back, and so should its inventory.
+
+    Every document read out of one file shares that file's name and the moment it was uploaded,
+    so ordering by those alone left the order to the database. The page each document starts on
+    is what puts them in the order someone turning the pages would meet them in.
+    """
+    data, spans = full_claim_bundle()
+    claim_id = claim_with(client, [("ClaimBundle.pdf", data, "application/pdf")])
+
+    documents = documents_of(client, claim_id)
+    first_pages = [item["page_numbers"][0] for item in documents]
+    assert first_pages == sorted(first_pages), first_pages
+    assert first_pages == sorted(first for first, _ in spans.values())
+
+
+# --- how a file being read is reported while it is being read ----------------------------------
+
+
+def test_a_claim_is_not_reported_as_read_until_all_of_its_documents_are_there(client, workspace, monkeypatch):
+    """A file becomes many documents one at a time, and "read" must wait for the last of them.
+
+    Each document is written as it is analysed. The file's own row used to be written first, so
+    the moment the first of eighteen documents landed the claim held one document and no
+    unfinished one — and said it had been read. Every reader believed it: the screen announced
+    the analysis had finished, readiness counted a claim of one document, and the seventeen
+    documents still to come appeared underneath a page that already called itself done.
+    """
+    from app.models import Claim
+    from app.services import analysis
+    from app.services import segmentation as segmentation_service
+
+    real = segmentation_service.analysis_service.store_result
+    seen: list[tuple[int, str]] = []
+
+    def watch(session, document, result, **kwargs):
+        real(session, document, result, **kwargs)
+        claim = session.get(Claim, document.claim_id)
+        state = analysis.claim_state(session, claim)
+        seen.append((state["document_count"], state["state"]))
+
+    monkeypatch.setattr(segmentation_service.analysis_service, "store_result", watch)
+
+    data, _ = full_claim_bundle()
+    claim_id = claim_with(client, [("ClaimBundle.pdf", data, "application/pdf")])
+
+    assert len(seen) == len(FULL_CLAIM), seen
+    # Every document but the last leaves the claim still being read.
+    assert [state for _, state in seen[:-1]] == ["running"] * (len(FULL_CLAIM) - 1), seen
+    # And the claim reads as complete only once every document of the file is there.
+    assert seen[-1] == (len(FULL_CLAIM), "completed"), seen
+    assert len(documents_of(client, claim_id)) == len(FULL_CLAIM)
+
+
 # --- the report, and the record of how the inventory was produced ------------------------------
 
 

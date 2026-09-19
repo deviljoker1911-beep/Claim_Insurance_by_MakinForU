@@ -71,7 +71,7 @@ class Claim(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
     documents: Mapped[list["Document"]] = relationship(
-        back_populates="claim", order_by="Document.uploaded_at, Document.original_filename"
+        back_populates="claim", order_by="Document.uploaded_at, Document.original_filename, Document.segment_index"
     )
 
 
