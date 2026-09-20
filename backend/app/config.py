@@ -61,6 +61,32 @@ class Settings(BaseSettings):
     serve_frontend: bool = False
     frontend_dist: Path = REPO_ROOT / "frontend" / "dist"
 
+    # --- Access gate ---
+    # Off by default: local development, the test suite and an offline demo all run without it.
+    # A public deployment turns it on, and then nothing but the gate itself answers until a
+    # visitor has proved an email address they can receive mail at.
+    access_gate_enabled: bool = False
+    # Signs the session cookie. A deployment must set its own; an empty value with the gate on
+    # is refused at startup rather than silently signing with something guessable.
+    access_session_secret: SecretStr = SecretStr("")
+    access_session_days: int = 30
+    access_code_ttl_minutes: int = 10
+    access_code_max_attempts: int = 5
+    # How often one address, and one caller, may ask for a code.
+    access_requests_per_email_per_hour: int = 5
+    access_requests_per_ip_per_hour: int = 20
+    # Reads the captured visitor list. Without one, the list is not served at all.
+    access_admin_token: SecretStr = SecretStr("")
+
+    # Mail delivery for the access code. With no host configured the code is written to the
+    # application log instead, so the gate can be exercised offline and in tests.
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_username: str = ""
+    smtp_password: SecretStr = SecretStr("")
+    smtp_from: str = ""
+    smtp_starttls: bool = True
+
     llm_provider: str = "demo"
     llm_model: str = ""
     anthropic_api_key: SecretStr = SecretStr("")

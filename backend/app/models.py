@@ -28,6 +28,48 @@ class AppSetting(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
 
+class Visitor(Base):
+    """Someone who asked for access to the demo, and whether they proved the address.
+
+    Kept out of the claim workspace on purpose: a demo reset clears the claims, and the people
+    who asked to see them are not demo data. One row per address, so asking twice updates the
+    row rather than adding another.
+    """
+
+    __tablename__ = "visitors"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    email: Mapped[str] = mapped_column(String(320), unique=True, index=True)
+    verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+    requests: Mapped[int] = mapped_column(Integer, default=0)
+    first_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+    # What the address was asked from, kept so a flood of requests can be told apart from use.
+    last_user_agent: Mapped[str | None] = mapped_column(String(400), default=None)
+
+    @property
+    def is_verified(self) -> bool:
+        return self.verified_at is not None
+
+
+class AccessChallenge(Base):
+    """A code sent to an address, and what has been tried against it.
+
+    The code itself is never stored — only its hash — so the table cannot hand anyone a way in.
+    """
+
+    __tablename__ = "access_challenges"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    email: Mapped[str] = mapped_column(String(320), index=True)
+    code_hash: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+    requested_ip: Mapped[str | None] = mapped_column(String(64), default=None)
+
+
 # --- Claim workspace (dropped and recreated by a demo reset) ---------------------------
 
 

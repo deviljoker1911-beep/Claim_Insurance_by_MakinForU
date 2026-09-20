@@ -945,3 +945,19 @@ export interface DashboardResponse {
   limit: number
   truncated: boolean
 }
+
+// --- Access gate ---
+
+export interface AccessSession {
+  gate_enabled: boolean
+  verified: boolean
+  email: string | null
+  delivery: 'mailed' | 'logged'
+}
+
+export interface AccessRequestResult {
+  sent: boolean
+  delivery: 'mailed' | 'logged'
+  expires_in_minutes: number
+  message: string
+}

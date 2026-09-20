@@ -1,0 +1,75 @@
+# ClaimAI on a server of your own: the app, its database, and a proxy that gets the certificate.
+#
+#   cp deploy/env.example .env.prod   # then fill it in — it will not start without the secrets
+#   docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
+#
+# Point an A record for CLAIMAI_DOMAIN at this host before starting: Caddy asks Let's Encrypt for
+# the certificate on the first request, and the answer depends on that record already resolving.
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: claimai
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in the env file}
+      POSTGRES_DB: claimai
+    volumes:
+      - claimai-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U claimai -d claimai"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    # Not published: only the app talks to it, over the compose network.
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+psycopg://claimai:${POSTGRES_PASSWORD}@db:5432/claimai
+      APP_ENV: production
+      # Anyone may come in; everyone leaves an address. See the README.
+      ACCESS_GATE_ENABLED: ${ACCESS_GATE_ENABLED:-true}
+      ACCESS_SESSION_SECRET: ${ACCESS_SESSION_SECRET:?set ACCESS_SESSION_SECRET in the env file}
+      ACCESS_ADMIN_TOKEN: ${ACCESS_ADMIN_TOKEN:-}
+      # With no SMTP host the code is written to the container log instead of being sent.
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:-}
+      FRONTEND_ORIGIN: https://${CLAIMAI_DOMAIN}
+      # Slows the visible stages down so an audience can follow them. 0 runs at full speed.
+      DEMO_PACING_MS: ${DEMO_PACING_MS:-120}
+    volumes:
+      # The uploaded originals. They are rebuilt from nothing, so this outlives the container.
+      - claimai-storage:/app/backend/storage
+    expose:
+      - "8010"
+
+  proxy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      - app
+    environment:
+      CLAIMAI_DOMAIN: ${CLAIMAI_DOMAIN:?set CLAIMAI_DOMAIN in the env file}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+
+volumes:
+  claimai-pgdata:
+  claimai-storage:
+  caddy-data:
+  caddy-config:

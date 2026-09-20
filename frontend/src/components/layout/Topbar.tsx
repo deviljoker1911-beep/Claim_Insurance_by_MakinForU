@@ -1,13 +1,19 @@
-import { ChevronRight, Plus } from 'lucide-react'
+import { ChevronRight, LogOut, Plus } from 'lucide-react'
 import { useLocation, useMatches } from 'react-router'
 
 import type { RouteHandle } from '../../app/routeHandle'
+import { useAccessSession, useSignOut } from '../../lib/hooks'
 import { ButtonLink } from '../ui/Button'
 import { ApiStatus } from './ApiStatus'
 
 export function Topbar() {
   const matches = useMatches()
   const { pathname } = useLocation()
+  const access = useAccessSession()
+  const signOut = useSignOut()
+  // On a deployment that asks for an address, say which one is in — the operator on the audit
+  // trail is a configured name, not the visitor, and confusing the two would misread the record.
+  const visitor = access.data?.gate_enabled ? access.data.email : null
   const title =
     [...matches]
       .reverse()
@@ -35,10 +41,24 @@ export function Topbar() {
           <div className="grid size-8 place-items-center rounded-full bg-brand-100 text-xs font-semibold text-brand-800">
             DO
           </div>
-          <div className="leading-tight">
+          <div className="min-w-0 leading-tight">
             <p className="text-sm font-medium text-slate-900">Demo Operator</p>
-            <p className="text-xs text-slate-500">Claims desk</p>
+            <p className="max-w-[14rem] truncate text-xs text-slate-500" title={visitor ?? undefined}>
+              {visitor ?? 'Claims desk'}
+            </p>
           </div>
+          {visitor && (
+            <button
+              type="button"
+              onClick={() => signOut.mutate()}
+              disabled={signOut.isPending}
+              title="Sign out"
+              aria-label="Sign out"
+              className="grid size-8 place-items-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+            >
+              <LogOut className="size-4" />
+            </button>
+          )}
         </div>
       </div>
     </header>

@@ -1,0 +1,12 @@
+# Build context: only what the image actually needs.
+**/.venv
+**/node_modules
+**/__pycache__
+**/*.pyc
+**/.pytest_cache
+**/.ruff_cache
+backend/storage
+frontend/dist
+.git
+.env
+*.log

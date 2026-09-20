@@ -1391,3 +1391,39 @@ class DemoResetResult(BaseModel):
     next_claim_number: str
     preserved: list[str]
     reset_at: UTCDateTime
+
+
+# --- Access gate -----------------------------------------------------------------------
+
+
+class AccessRequestIn(BaseModel):
+    email: str = Field(max_length=320)
+
+
+class AccessVerifyIn(BaseModel):
+    email: str = Field(max_length=320)
+    code: str = Field(max_length=32)
+
+
+class AccessRequestResult(BaseModel):
+    sent: bool
+    # "mailed" when a mail server is configured, "logged" when the code went to the server log.
+    delivery: Literal["mailed", "logged"]
+    expires_in_minutes: int
+    message: str
+
+
+class AccessSession(BaseModel):
+    gate_enabled: bool
+    verified: bool
+    email: str | None
+    delivery: Literal["mailed", "logged"]
+
+
+class VisitorOut(BaseModel):
+    email: str
+    verified: bool
+    requests: int
+    first_seen_at: UTCDateTime
+    verified_at: UTCDateTime | None
+    last_seen_at: UTCDateTime | None

@@ -13,6 +13,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app import __version__
 from app.api import (
+    access,
     analysis,
     assistant,
     audit,
@@ -38,6 +39,13 @@ settings = get_settings()
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    if settings.access_gate_enabled and not settings.access_session_secret.get_secret_value():
+        # Refused here rather than at the first sign-in: a deployment that starts without a
+        # secret looks fine until someone mints their own session with a known one.
+        raise RuntimeError(
+            "ACCESS_GATE_ENABLED is on but ACCESS_SESSION_SECRET is empty. "
+            "Set it to a long random value (for example: openssl rand -hex 32)."
+        )
     settings.storage_dir.mkdir(parents=True, exist_ok=True)
     # On failure the API keeps serving: /api/health reports "degraded" and setup is retried on demand.
     ready = init_db()
@@ -63,11 +71,15 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[settings.frontend_origin, "http://localhost:5173", "http://127.0.0.1:5173"],
+    # The access session is a cookie, so the dev server on another port has to be allowed to
+    # send it. Origins are named individually, which is what lets credentials be allowed at all.
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 app.include_router(health.router, prefix="/api")
+app.include_router(access.router, prefix="/api")
 app.include_router(claims.router, prefix="/api")
 app.include_router(documents.router, prefix="/api")
 app.include_router(analysis.router, prefix="/api")
@@ -80,6 +92,39 @@ app.include_router(dashboard.router, prefix="/api")
 app.include_router(reports.router, prefix="/api")
 app.include_router(demo.router, prefix="/api")
 app.include_router(audit.router, prefix="/api")
+
+
+# Paths that answer before a visitor has proved an address: the gate itself, the health probe
+# that a load balancer calls, the OpenAPI description, and the built web app, which has to load
+# in order to show the gate at all.
+_OPEN_PREFIXES = ("/api/access/", "/api/health", "/api/docs", "/api/openapi.json")
+
+
+@app.middleware("http")
+async def access_gate(request: Request, call_next):
+    """Hold everything behind a proved email address when the gate is on.
+
+    It guards the API rather than the page. A gate that only hid the interface would leave every
+    endpoint — uploads included — open to anyone who skipped it.
+    """
+    settings = get_settings()
+    path = request.url.path
+    if (
+        not settings.access_gate_enabled
+        or request.method == "OPTIONS"
+        or not path.startswith("/api/")
+        or path.startswith(_OPEN_PREFIXES)
+    ):
+        return await call_next(request)
+
+    from app.access.session import COOKIE_NAME, read_session
+
+    if read_session(request.cookies.get(COOKIE_NAME)) is None:
+        return JSONResponse(
+            {"detail": {"message": "Confirm your email address to use this demo.", "reason": "access_required"}},
+            status_code=401,
+        )
+    return await call_next(request)
 
 
 @app.exception_handler(StarletteHTTPException)

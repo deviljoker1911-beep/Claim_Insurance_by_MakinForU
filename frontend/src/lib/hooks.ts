@@ -2,6 +2,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { api, ApiError, uploadFiles } from './api'
 import type {
+  AccessRequestResult,
+  AccessSession,
   ApprovalResult,
   AssistantAnswer,
   ChecklistResponse,
@@ -38,6 +40,49 @@ export function useHealth() {
     retry: false,
     refetchInterval: 15_000,
     refetchOnWindowFocus: true,
+  })
+}
+
+/** Whether this deployment asks for an email address, and whether this browser has given one. */
+export function useAccessSession() {
+  return useQuery({
+    queryKey: ['access', 'session'],
+    queryFn: () => api<AccessSession>('/access/session'),
+    // The gate is the first thing asked for and the thing everything else waits on, so a
+    // hiccup reaching it should resolve itself rather than strand the visitor on an error.
+    retry: 1,
+    staleTime: 60_000,
+  })
+}
+
+export function useRequestAccessCode() {
+  return useMutation({
+    mutationFn: (email: string) =>
+      api<AccessRequestResult>('/access/request', { method: 'POST', body: JSON.stringify({ email }) }),
+  })
+}
+
+export function useVerifyAccessCode() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ email, code }: { email: string; code: string }) =>
+      api<AccessSession>('/access/verify', { method: 'POST', body: JSON.stringify({ email, code }) }),
+    // Everything was refused while there was no session; now that there is one, ask again.
+    onSuccess: (session) => {
+      queryClient.setQueryData(['access', 'session'], session)
+      return queryClient.invalidateQueries()
+    },
+  })
+}
+
+export function useSignOut() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: () => api<AccessSession>('/access/signout', { method: 'POST' }),
+    onSuccess: (session) => {
+      queryClient.setQueryData(['access', 'session'], session)
+      queryClient.clear()
+    },
   })
 }
 

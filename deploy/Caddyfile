@@ -1,0 +1,25 @@
+# TLS for the subdomain, and the app behind it.
+#
+# Caddy asks Let's Encrypt for the certificate the first time the name is requested, so the DNS
+# record has to resolve to this host before it can succeed.
+
+{$CLAIMAI_DOMAIN} {
+	encode zstd gzip
+
+	# Uploads are capped in the application too (MAX_UPLOAD_MB); this stops a large body from
+	# being read all the way into it first.
+	request_body {
+		max_size 30MB
+	}
+
+	header {
+		# A demo, not a place search engines should be sending people.
+		X-Robots-Tag "noindex, nofollow"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "SAMEORIGIN"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+
+	reverse_proxy app:8010
+}
