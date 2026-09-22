@@ -22,7 +22,7 @@ import { Skeleton } from '../components/ui/Skeleton'
 import { iconTones, type Tone } from '../components/ui/styles'
 import { cx } from '../lib/cx'
 import { plural } from '../lib/format'
-import { useHealth, useResetDemo } from '../lib/hooks'
+import { useAccessSession, useHealth, useResetDemo } from '../lib/hooks'
 import type { HealthResponse } from '../lib/types'
 
 const DIALECTS: Record<string, string> = { postgresql: 'PostgreSQL', sqlite: 'SQLite' }
@@ -65,6 +65,8 @@ export function SettingsPage() {
 }
 
 function DemoWorkspaceCard() {
+  // On a deployment that asks visitors for an address, a reset is yours alone.
+  const scopedToYou = Boolean(useAccessSession().data?.gate_enabled)
   const reset = useResetDemo()
   const [confirming, setConfirming] = useState(false)
   const result = reset.data
@@ -78,10 +80,13 @@ function DemoWorkspaceCard() {
       />
       <div className="flex flex-wrap items-center justify-between gap-4 p-5">
         <p className="max-w-2xl text-sm leading-relaxed text-slate-600">
-          Resetting deletes every claim, uploaded original and audit event, recreates the synthetic demo documents and
-          restarts claim numbering at its configured start (the next new claim is{' '}
+          Resetting deletes {scopedToYou ? 'your claims' : 'every claim'}, the uploaded originals and the
+          audit events that go with them, recreates the synthetic demo documents and restarts
+          claim numbering at its configured start (your next new claim is{' '}
           <span className="font-semibold">CLM-2026-00123</span> by default).
-          Application settings are kept.
+          {scopedToYou
+            ? ' Anyone else looking at the demo keeps their own claims.'
+            : ' Application settings are kept.'}
         </p>
         {confirming ? (
           <div className="flex gap-2">

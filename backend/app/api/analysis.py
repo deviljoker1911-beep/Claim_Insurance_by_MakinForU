@@ -27,7 +27,7 @@ from app.schemas import (
 )
 from app.services import analysis as analysis_service
 from app.services import canonical as canonical_service
-from app.services.claims import get_claim_or_404, is_uuid
+from app.services.claims import get_claim_or_404, mine_or_404, is_uuid
 from app.services.locks import WORKSPACE_LOCK
 from app.worker import get_worker
 
@@ -38,9 +38,7 @@ PageNumber = Annotated[int, Path(ge=1, le=10_000, description="1-based page numb
 
 def _document_or_404(session: Session, document_id: str) -> Document:
     document = session.get(Document, document_id) if is_uuid(document_id) else None
-    if document is None:
-        raise HTTPException(status_code=404, detail="Document not found")
-    return document
+    return mine_or_404(session, document, "Document")
 
 
 def _page_image_url(document_id: str, page_number: int) -> str:

@@ -4,7 +4,17 @@ import uuid
 from datetime import UTC, date, datetime
 from typing import Any
 
-from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import (
+    Boolean,
+    Date,
+    DateTime,
+    Float,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db import Base, JSONType
@@ -74,9 +84,17 @@ class AccessChallenge(Base):
 
 
 class ClaimCounter(Base):
+    """Next claim number, per series and per owner.
+
+    Each workspace counts from the start of the series, so the first claim someone creates is
+    CLM-2026-00123 for them whoever else has been here. Numbers are unique within a workspace,
+    not across the database.
+    """
+
     __tablename__ = "claim_counters"
 
     series: Mapped[str] = mapped_column(String(32), primary_key=True)
+    owner: Mapped[str] = mapped_column(String(320), primary_key=True, default="")
     next_value: Mapped[int] = mapped_column(Integer)
 
 
@@ -84,7 +102,11 @@ class Claim(Base):
     __tablename__ = "claims"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
-    claim_number: Mapped[str] = mapped_column(String(32), unique=True, index=True)
+    # Whose workspace this claim is in: the address that was verified to reach it, or "" when
+    # nothing gates the deployment and there is one shared workspace. Claim numbers restart per
+    # owner, so the number is unique within a workspace rather than across the table.
+    owner: Mapped[str] = mapped_column(String(320), default="", index=True)
+    claim_number: Mapped[str] = mapped_column(String(32), index=True)
     patient_name: Mapped[str] = mapped_column(String(200))
     uhid: Mapped[str] = mapped_column(String(64))
     hospital: Mapped[str] = mapped_column(String(200))
@@ -111,6 +133,8 @@ class Claim(Base):
     created_by: Mapped[str] = mapped_column(String(120))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+    __table_args__ = (UniqueConstraint("owner", "claim_number", name="uq_claim_number_per_owner"),)
 
     documents: Mapped[list["Document"]] = relationship(
         back_populates="claim", order_by="Document.uploaded_at, Document.original_filename, Document.segment_index"

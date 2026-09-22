@@ -18,8 +18,8 @@ from app.access.codes import (
     normalise_email,
     verify_code,
 )
-from app.access.session import read_session, session_cookie_value
 from app.access.mail import deliver_code, delivery_mode
+from app.access.session import read_session, session_cookie_value
 
 __all__ = [
     "CodeOutcome",

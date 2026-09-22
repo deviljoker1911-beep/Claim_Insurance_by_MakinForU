@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.services.claims import visible_audit
 from app.db import get_session
 from app.models import AuditEvent
 from app.schemas import AuditEventOut
@@ -21,7 +22,11 @@ def audit_events(
     session: Session = Depends(get_session),
 ) -> list[AuditEventOut]:
     """Most recent events first."""
-    query = select(AuditEvent).order_by(AuditEvent.created_at.desc(), AuditEvent.id.desc()).limit(limit)
+    # Scoped to the caller's own claims: an audit trail that showed everybody's would hand
+    # one visitor the patient names and claim numbers of every other.
+    query = visible_audit(
+        select(AuditEvent).order_by(AuditEvent.created_at.desc(), AuditEvent.id.desc())
+    ).limit(limit)
     if event_type:
         query = query.where(AuditEvent.event_type == event_type)
     with WORKSPACE_LOCK.shared():

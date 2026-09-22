@@ -6,21 +6,39 @@ Rebuilding holds WORKSPACE_LOCK exclusively, so it never runs under an in-flight
 """
 
 import logging
+import shutil
 
-from sqlalchemy import func, inspect, select
+from sqlalchemy import delete, func, inspect, select
 
 from app.audit import record_event
 from app.db import Base, SessionLocal, engine
 from app.demo_gen.generate import generate_in_memory
-from app.models import WORKSPACE_MODELS, AppSetting, AuditEvent, Claim, Document, utcnow
+from app.access.scope import SHARED, current_owner
+from app.models import (
+    WORKSPACE_MODELS,
+    AppSetting,
+    AuditEvent,
+    Claim,
+    ClaimCounter,
+    ClaimState,
+    Document,
+    DocumentBill,
+    DocumentPage,
+    ExtractedField,
+    Finding,
+    Question,
+    ReanalysisRun,
+    ValidationRun,
+    utcnow,
+)
 from app.services.demo_pack import sync_demo_data
 from app.services.locks import WORKSPACE_LOCK
 from app.services.numbering import ensure_counter, peek_next_claim_number
-from app.storage import remove_all_claim_storage
+from app.storage import originals_dir, remove_all_claim_storage
 
 logger = logging.getLogger("claimai.workspace")
 
-WORKSPACE_SCHEMA_VERSION = 11
+WORKSPACE_SCHEMA_VERSION = 12
 SCHEMA_VERSION_KEY = "workspace_schema_version"
 
 
@@ -88,9 +106,100 @@ def initialize_workspace() -> None:
             session.commit()
 
 
-def reset_demo_workspace(actor: str | None = None) -> dict:
-    """Clear all claims and stored originals, recreate the demo data and restart claim numbering."""
+# Everything a claim owns, in the order it has to go: children before the claim they hang off.
+# Three of these carry a claim_id without a foreign key, so they are deleted by hand rather than
+# left to a cascade that SQLite and PostgreSQL would not agree about.
+_CLAIM_OWNED = (
+    DocumentPage,
+    ExtractedField,
+    DocumentBill,
+    Document,
+    ClaimState,
+    Finding,
+    ValidationRun,
+    Question,
+    ReanalysisRun,
+    AuditEvent,
+)
+
+
+def reset_one_workspace(owner: str, actor: str | None = None) -> dict:
+    """Clear one visitor's claims, and nobody else's.
+
+    A shared reset on a deployment that keeps visitors apart would take the demo out from under
+    whoever else is mid-walkthrough. This removes only what belongs to the caller: their claims,
+    their stored originals and their numbering, leaving every other workspace untouched.
+    """
     from app.worker import get_worker
+
+    get_worker().drain()
+    with WORKSPACE_LOCK.exclusive():
+        with SessionLocal() as session:
+            claim_ids = list(session.scalars(select(Claim.id).where(Claim.owner == owner)).all())
+            deleted = {"claims": len(claim_ids), "documents": 0, "audit_events": 0}
+            if claim_ids:
+                deleted["documents"] = (
+                    session.scalar(
+                        select(func.count()).select_from(Document).where(Document.claim_id.in_(claim_ids))
+                    )
+                    or 0
+                )
+                deleted["audit_events"] = (
+                    session.scalar(
+                        select(func.count()).select_from(AuditEvent).where(AuditEvent.claim_id.in_(claim_ids))
+                    )
+                    or 0
+                )
+                for model in _CLAIM_OWNED:
+                    session.execute(delete(model).where(model.claim_id.in_(claim_ids)))
+                session.execute(delete(Claim).where(Claim.id.in_(claim_ids)))
+            # Numbering starts again, so this visitor's next claim is the first of the series.
+            session.execute(
+                delete(ClaimCounter).where(ClaimCounter.owner == owner)
+            )
+            ensure_counter(session, owner)
+            next_claim_number = peek_next_claim_number(session)
+            session.commit()
+
+        # The originals are outside the database and have to be removed by hand.
+        for claim_id in claim_ids:
+            directory = originals_dir(claim_id).parent
+            if directory.exists():
+                shutil.rmtree(directory, ignore_errors=True)
+
+        with SessionLocal() as session:
+            record_event(
+                session,
+                "demo_reset",
+                f"Workspace reset; next claim number is {next_claim_number}",
+                actor=actor,
+                details={"deleted": deleted, "scope": "one workspace", "next_claim_number": next_claim_number},
+            )
+            session.commit()
+
+    return {
+        "status": "ok",
+        "deleted": deleted,
+        "storage_cleared": True,
+        "next_claim_number": next_claim_number,
+        "preserved": ["other visitors' claims", "app_settings", "environment configuration (.env)"],
+        "reset_at": utcnow(),
+    }
+
+
+def reset_demo_workspace(actor: str | None = None) -> dict:
+    """Clear all claims and stored originals, recreate the demo data and restart claim numbering.
+
+    On a deployment that keeps visitors apart this clears only the caller's own workspace; the
+    demo data itself is shared and verified, not rebuilt per visitor.
+    """
+    from app.worker import get_worker
+
+    owner = current_owner()
+    if owner != SHARED:
+        result = reset_one_workspace(owner, actor=actor)
+        result["demo_data"] = sync_demo_data(generate_in_memory())
+        return result
 
     # Drop queued work first: those documents are about to be deleted. The document being
     # processed right now holds a shared lock, so the exclusive lock below waits for it.

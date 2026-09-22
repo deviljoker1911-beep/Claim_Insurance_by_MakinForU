@@ -21,7 +21,7 @@ from app.schemas import (
 from app.services import analysis as analysis_service
 from app.services import questions as question_service
 from app.services import reanalysis as reanalysis_service
-from app.services.claims import get_claim_or_404
+from app.services.claims import get_claim_or_404, mine_or_404
 from app.services.intake import IncomingFile, IntakeError, ingest_files
 from app.services.locks import WORKSPACE_LOCK
 from app.worker import get_worker
@@ -36,9 +36,7 @@ def _payload(question: Question) -> QuestionOut:
 
 def _question_or_404(session: Session, question_id: str) -> Question:
     question = question_service.get_question_or_none(session, question_id)
-    if question is None:
-        raise HTTPException(status_code=404, detail="Question not found")
-    return question
+    return mine_or_404(session, question, "Question")
 
 
 @router.get("/claims/{claim_id}/questions", response_model=QuestionsResponse)

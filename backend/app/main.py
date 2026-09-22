@@ -117,14 +117,22 @@ async def access_gate(request: Request, call_next):
     ):
         return await call_next(request)
 
+    from app.access.scope import reset_owner, set_owner
     from app.access.session import COOKIE_NAME, read_session
 
-    if read_session(request.cookies.get(COOKIE_NAME)) is None:
+    email = read_session(request.cookies.get(COOKIE_NAME))
+    if email is None:
         return JSONResponse(
             {"detail": {"message": "Confirm your email address to use this demo.", "reason": "access_required"}},
             status_code=401,
         )
-    return await call_next(request)
+    # Everything this request goes on to read or write belongs to this address. Bound here,
+    # once, so no route has to remember to ask.
+    token = set_owner(email)
+    try:
+        return await call_next(request)
+    finally:
+        reset_owner(token)
 
 
 @app.exception_handler(StarletteHTTPException)

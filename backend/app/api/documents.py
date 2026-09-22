@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 from app.db import get_session
 from app.models import Document
 from app.schemas import DocumentOut, UploadResult
-from app.services.claims import get_claim_or_404, is_uuid
+from app.services.claims import get_claim_or_404, mine_or_404, is_uuid
 from app.services.intake import IncomingFile, IntakeError, ingest_files
 from app.services.locks import WORKSPACE_LOCK
 from app.storage import absolute_storage_path
@@ -45,9 +45,7 @@ def upload_documents(
 
 def _document_or_404(session: Session, document_id: str) -> Document:
     document = session.get(Document, document_id) if is_uuid(document_id) else None
-    if document is None:
-        raise HTTPException(status_code=404, detail="Document not found")
-    return document
+    return mine_or_404(session, document, "Document")
 
 
 @router.get("/documents/{document_id}", response_model=DocumentOut)

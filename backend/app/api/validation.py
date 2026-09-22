@@ -15,7 +15,7 @@ from app.schemas import (
     ValidationRefreshResult,
 )
 from app.services import validation as validation_service
-from app.services.claims import get_claim_or_404, is_uuid
+from app.services.claims import get_claim_or_404, mine_or_404, is_uuid
 from app.services.locks import WORKSPACE_LOCK
 
 router = APIRouter(tags=["validation"])
@@ -111,8 +111,7 @@ def finding_action(
     """Review, resolve, acknowledge or reopen a finding, or exclude a duplicate copy."""
     with WORKSPACE_LOCK.shared():
         finding = session.get(Finding, finding_id) if is_uuid(finding_id) else None
-        if finding is None:
-            raise HTTPException(status_code=404, detail="Finding not found")
+        mine_or_404(session, finding, "Finding")
         try:
             validation_service.apply_action(
                 session,

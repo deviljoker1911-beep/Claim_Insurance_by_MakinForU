@@ -10,6 +10,8 @@ from __future__ import annotations
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.access.scope import current_owner
+from app.services.claims import visible_audit
 from app.models import AuditEvent, Claim
 from app.readiness import engine as readiness_engine
 from app.services import canonical as canonical_service
@@ -55,8 +57,11 @@ def _claim_row(session: Session, claim: Claim) -> dict:
 
 def overview(session: Session) -> dict:
     """Totals, the claims themselves and what happened recently."""
+    owner = current_owner()
     claims = list(
-        session.scalars(select(Claim).order_by(Claim.created_at.desc()).limit(MAX_CLAIMS)).all()
+        session.scalars(
+            select(Claim).where(Claim.owner == owner).order_by(Claim.created_at.desc()).limit(MAX_CLAIMS)
+        ).all()
     )
     rows = [_claim_row(session, claim) for claim in claims]
 
@@ -65,9 +70,10 @@ def overview(session: Session) -> dict:
         by_status[row["readiness_status"]] = by_status.get(row["readiness_status"], 0) + 1
 
     scores = [row["readiness_score"] for row in rows]
-    events = list(
-        session.scalars(select(AuditEvent).order_by(AuditEvent.id.desc()).limit(RECENT_ACTIVITY)).all()
-    )
+    # Recent activity is this workspace's activity. Unscoped it would show a visitor the
+    # claim numbers, and the patients, of everyone else looking at the demo.
+    recent = visible_audit(select(AuditEvent).order_by(AuditEvent.id.desc())).limit(RECENT_ACTIVITY)
+    events = list(session.scalars(recent).all())
 
     return {
         "totals": {
