@@ -1,10 +1,20 @@
-# ClaimAI on a server of your own: the app, its database, and a proxy that gets the certificate.
+# ClaimAI on a server of your own.
+#
+# By default this starts the app and its database only, with the app listening on loopback —
+# nothing of it is published. That is the right shape for a server that already has a web server
+# in front of it, which is most servers that are already hosting something. Put your existing
+# nginx/Apache in front of 127.0.0.1:8010; deploy/nginx-claimai.conf is a site file that does it.
 #
 #   cp deploy/env.example .env.prod   # then fill it in — it will not start without the secrets
 #   docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
 #
-# Point an A record for CLAIMAI_DOMAIN at this host before starting: Caddy asks Let's Encrypt for
-# the certificate on the first request, and the answer depends on that record already resolving.
+# On a server with nothing else on it, add the bundled Caddy instead and it will take ports 80
+# and 443 and get the certificate itself:
+#
+#   docker compose -f docker-compose.prod.yml --env-file .env.prod --profile caddy up -d --build
+#
+# Either way, point an A record for CLAIMAI_DOMAIN at this host first: the certificate is issued
+# against that name, and cannot be until it resolves.
 
 services:
   db:
@@ -50,11 +60,16 @@ services:
     volumes:
       # The uploaded originals. They are rebuilt from nothing, so this outlives the container.
       - claimai-storage:/app/backend/storage
-    expose:
-      - "8010"
+    # Loopback only. A web server on this host can reach it; the internet cannot, whatever the
+    # firewall happens to allow. Caddy, when used, reaches it over the compose network instead.
+    ports:
+      - "127.0.0.1:${APP_BIND_PORT:-8010}:8010"
 
+  # Only with --profile caddy. Left out, nothing here touches ports 80 and 443, so a server
+  # already serving another site keeps serving it.
   proxy:
     image: caddy:2-alpine
+    profiles: ["caddy"]
     restart: unless-stopped
     depends_on:
       - app

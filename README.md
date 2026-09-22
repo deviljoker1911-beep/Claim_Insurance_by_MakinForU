@@ -262,8 +262,15 @@ it.
 
 ### Deploying to a subdomain
 
-One container serves the API and the built web app on a single port. Alongside it: PostgreSQL, and
-Caddy to get the TLS certificate.
+One container serves the API and the built web app on a single port, with PostgreSQL beside it.
+
+**Which shape your server is** decides the rest:
+
+- **Already running another site?** Then it already has nginx or Apache on ports 80 and 443. Leave
+  those alone: the app listens on `127.0.0.1:8010` and your existing web server proxies to it.
+  This is the default — nothing in the compose file touches 80 or 443.
+- **Nothing else on it?** Add `--profile caddy` and the bundled Caddy takes 80 and 443 and gets the
+  certificate itself.
 
 **What the server needs.** 2 vCPU and 4 GB RAM is comfortable; OCR is the only demanding part and
 it runs one document at a time. The image is about 1.9 GB — the OCR runtime and its models are
@@ -280,8 +287,25 @@ cd Claim_Insurance_by_MakinForU
 cp deploy/env.example .env.prod
 # fill it in — see below. It will not start without the secrets.
 
+# a server that already hosts something — app on loopback, your web server in front
 docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
+
+# or, on a server with nothing else on it, let Caddy own 80/443 and get the certificate
+docker compose -f docker-compose.prod.yml --env-file .env.prod --profile caddy up -d --build
 ```
+
+**Behind an existing nginx**, add one site file and a certificate — it touches no other site:
+
+```bash
+sudo cp deploy/nginx-claimai.conf /etc/nginx/sites-available/claimai
+sudo sed -i 's/CLAIMAI_DOMAIN/claimai.example.com/g' /etc/nginx/sites-available/claimai
+sudo ln -sf /etc/nginx/sites-available/claimai /etc/nginx/sites-enabled/claimai
+sudo nginx -t && sudo systemctl reload nginx
+sudo certbot --nginx -d claimai.example.com
+```
+
+That config forwards `X-Forwarded-Proto`, which is how the app knows to mark the session cookie
+`Secure`. Proxy to it without that header and the gate will ask for a code on every page.
 
 What `.env.prod` needs:
 
