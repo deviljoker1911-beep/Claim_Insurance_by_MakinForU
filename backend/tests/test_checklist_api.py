@@ -96,14 +96,23 @@ def test_a_cataract_claim_gets_the_cataract_checklist(client):
     assert row(payload, "nursing_records")["required"] is False
 
 
-def test_a_procedure_without_a_checklist_is_said_plainly(client):
+def test_an_appendicectomy_is_measured_against_its_own_checklist(client):
+    """This used to be the example of a procedure the documents named and nothing could check.
+
+    An appendicectomy was recognised as one and then told no checklist was configured, so none
+    of the documents it carried were measured against what the operation needs. The case it
+    tested can no longer happen — every procedure detection can name now has a checklist, and
+    test_every_procedure_the_documents_can_name_has_a_checklist holds the two in step — so it
+    tests the fix instead, end to end, from documents that say "Appendicectomy".
+    """
     values = factory.CLEAN.with_(procedure="Appendicectomy", diagnosis="Acute appendicitis", icd10="K35.80")
     payload = checklist(client, scenario(client, clean_documents(values)).claim_id)
-    assert payload["available"] is False
+    assert payload["available"] is True
     assert payload["procedure"]["key"] == "appendicectomy"
-    assert payload["procedure"]["has_checklist"] is False
-    assert "No checklist is configured" in payload["note"]
-    assert [item["label"] for item in payload["configured_procedures"]] == [
+    assert payload["procedure"]["has_checklist"] is True
+    assert "operative_note" in {item["key"] for item in payload["items"]}
+    # The prototype's three are still offered first, ahead of the procedures added since.
+    assert [item["label"] for item in payload["configured_procedures"]][:3] == [
         "Laparoscopic cholecystectomy",
         "Total knee replacement",
         "Cataract surgery",

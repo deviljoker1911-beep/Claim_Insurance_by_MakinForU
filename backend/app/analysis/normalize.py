@@ -236,6 +236,33 @@ PROCEDURES: tuple[tuple[str, str, str], ...] = (
     ("knee_replacement", "Total knee replacement", r"\b(?:tkr|total\s+knee\s+(?:replacement|arthroplasty))\b"),
     ("cataract_surgery", "Cataract surgery", r"\b(?:phacoemulsification|cataract\s+(?:surgery|extraction))\b"),
     ("ureteroscopy", "Ureteroscopy / RIRS", r"\b(?:urs|ureteroscopy|rirs)\b"),
+    # Added after reading real claim packets: high-volume cashless procedures. Appended rather
+    # than interleaved so no text that matched before matches anything different now. Each one
+    # names the operation, never the condition — "fracture neck of femur" is a diagnosis and
+    # stays unmatched; "internal fixation" of it is the procedure.
+    (
+        "hip_replacement",
+        "Hip replacement",
+        r"\b(?:thr|total\s+hip\s+(?:replacement|arthroplasty)|hip\s+(?:replacement|arthroplasty|hemi-?arthroplasty)"
+        r"|bipolar\s+hemi-?arthroplasty)\b",
+    ),
+    (
+        "cabg",
+        "Coronary artery bypass grafting",
+        r"\b(?:cabg|coronary\s+artery\s+bypass(?:\s+graft(?:ing)?)?)\b",
+    ),
+    (
+        "turp",
+        "Transurethral resection of prostate",
+        r"\b(?:turp|transurethral\s+resection\s+of\s+(?:the\s+)?prostate)\b",
+    ),
+    ("pcnl", "Percutaneous nephrolithotomy", r"\b(?:pcnl|percutaneous\s+nephrolithotomy)\b"),
+    (
+        "fracture_fixation",
+        "Fracture fixation",
+        r"\b(?:orif|crif|(?:open|closed)\s+reduction\s+(?:and\s+|with\s+)?internal\s+fixation"
+        r"|internal\s+fixation|intramedullary\s+nail(?:ing)?|dhs\s+fixation|pfn(?:a)?\s+fixation)\b",
+    ),
 )
 _PROCEDURE_PATTERNS = tuple((key, label, re.compile(pattern, re.IGNORECASE)) for key, label, pattern in PROCEDURES)
 

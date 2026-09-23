@@ -6,6 +6,8 @@ state built by hand. The API tests below run real documents through the real pip
 
 import pytest
 
+from app.config_files import checklists_config
+
 from app.analysis import normalize as nz
 from app.checklist import engine
 from app.config_files import ConfigError, checklists_config, document_types_config
@@ -34,11 +36,25 @@ def test_an_unimplemented_condition_is_refused_rather_than_ignored():
 
 
 def test_the_three_prototype_procedures_have_a_checklist():
-    assert [item["key"] for item in engine.configured_procedures()] == [
+    assert [item["key"] for item in engine.configured_procedures()][:3] == [
         "laparoscopic_cholecystectomy",
         "knee_replacement",
         "cataract_surgery",
     ]
+
+
+def test_every_procedure_the_documents_can_name_has_a_checklist():
+    """The test that would have caught the gap a real claim packet found.
+
+    Detection knew thirteen operations and checklists existed for three. A claim for a hernia
+    repair was recognised as one, then told no checklist was configured — so nothing it carried
+    was measured against what that operation needs, and it asked the operator for nothing. The
+    two lists are kept in step here, in both directions.
+    """
+    detectable = {key for key, _, _ in nz.PROCEDURES}
+    configured = {item["key"] for item in engine.configured_procedures()}
+    assert detectable - configured == set(), f"recognised but with no checklist: {detectable - configured}"
+    assert configured - detectable == set(), f"a checklist nothing can select: {configured - detectable}"
 
 
 def test_a_procedure_may_override_a_requirement_without_changing_the_catalogue():
@@ -98,8 +114,70 @@ def test_the_other_two_prototype_procedures_are_detected(printed, key):
     assert nz.normalise_procedure(printed)["key"] == key
 
 
-def test_a_diagnosis_is_not_read_as_the_operation():
-    assert nz.normalise_procedure("Acute cholecystitis") is None
+@pytest.mark.parametrize(
+    ("printed", "key"),
+    [
+        ("Total Hip Replacement (L)", "hip_replacement"),
+        ("THR right", "hip_replacement"),
+        ("Bipolar hemiarthroplasty", "hip_replacement"),
+        ("CABG x3", "cabg"),
+        ("Coronary artery bypass grafting", "cabg"),
+        ("TURP", "turp"),
+        ("Transurethral resection of the prostate", "turp"),
+        ("PCNL (right)", "pcnl"),
+        ("Percutaneous nephrolithotomy", "pcnl"),
+        ("ORIF with plating", "fracture_fixation"),
+        ("Closed reduction and internal fixation", "fracture_fixation"),
+        ("Intramedullary nailing of femur", "fracture_fixation"),
+        ("DHS fixation", "fracture_fixation"),
+    ],
+)
+def test_the_operations_added_from_real_packets_are_detected(printed, key):
+    assert nz.normalise_procedure(printed)["key"] == key
+
+
+@pytest.mark.parametrize(
+    "printed",
+    [
+        "Acute cholecystitis",
+        # Each of these is the condition an added operation treats. Reading the diagnosis as the
+        # operation would give a claim for a fracture a checklist for surgery it never had.
+        "Fracture neck of femur",
+        "Coronary artery disease",
+        "BPH",
+        "Renal calculus",
+        "Osteoarthritis hip",
+        # And two that share letters with an abbreviation: "plating" and "urs".
+        "Platelet count low",
+        "24 hours observation",
+    ],
+)
+def test_a_diagnosis_is_not_read_as_the_operation(printed):
+    assert nz.normalise_procedure(printed) is None
+
+
+@pytest.mark.parametrize("key", ["angioplasty", "hip_replacement", "fracture_fixation"])
+def test_an_operation_that_always_leaves_an_implant_always_asks_for_its_invoice(key):
+    """A stent, a prosthesis, a plate: the invoice is expected whether or not one was billed."""
+    procedure = next(p for p in checklists_config()["procedures"] if p["key"] == key)
+    implant = next(r for r in engine._requirements_of(procedure) if r["key"] == "implant_invoice")
+    assert implant["applies_when"] == "always"
+    assert implant["severity"] == "critical"
+
+
+@pytest.mark.parametrize("key", ["hernia_repair", "ureteroscopy", "pcnl", "cabg"])
+def test_an_operation_that_only_sometimes_leaves_one_asks_once_it_is_billed(key):
+    procedure = next(p for p in checklists_config()["procedures"] if p["key"] == key)
+    implant = next(r for r in engine._requirements_of(procedure) if r["key"] == "implant_invoice")
+    assert implant["applies_when"] == "implant_billed"
+
+
+def test_angioplasty_under_local_does_not_ask_for_an_anaesthesia_chart():
+    """Done in the catheter laboratory under local, so the chart is conditional, as for cataract."""
+    procedure = next(p for p in checklists_config()["procedures"] if p["key"] == "angioplasty")
+    by_key = {r["key"]: r for r in engine._requirements_of(procedure)}
+    assert by_key["anaesthesia_record"]["applies_when"] == "general_anaesthesia"
+    assert by_key["operative_note"]["label"] == "Angioplasty procedure note"
 
 
 def test_an_unknown_operation_names_no_procedure():
@@ -355,7 +433,7 @@ def test_an_undocumented_anaesthesia_still_asks_for_the_chart():
 
 
 def test_a_procedure_without_a_checklist_says_so_and_names_the_ones_that_have_one():
-    state = _state([], procedure="appendicectomy")
+    state = _state([], procedure="an_operation_with_no_checklist")
     checklist = engine.build_checklist(state)
     assert checklist["available"] is False
     assert checklist["items"] == []

@@ -237,3 +237,220 @@ procedures:
       - key: nursing_records
         required: false
         severity: info
+
+  # --- Added after reading real claim packets --------------------------------------------------
+  #
+  # A reasonable baseline of what a cashless in-patient claim for each operation carries — the
+  # documents a TPA commonly asks for, not any one insurer's authoritative list. Insurers differ;
+  # a requirement here that an insurer does not want can be marked not applicable by the operator.
+  #
+  # The implant rule is the one real difference between them. Where an operation always leaves
+  # an implant behind — a joint, a stent, a plate — its invoice is expected with the claim.
+  # Where it only sometimes does — a hernia mesh, a ureteric stent — it is expected once one is
+  # billed. Anaesthesia documents are asked for only where the records show anaesthesia beyond
+  # local or topical, which is what spares an angioplasty done under local.
+
+  - key: cholecystectomy
+    label: Cholecystectomy
+    note: >-
+      Gallbladder removal where the documents do not say whether it was laparoscopic or open.
+      The documents expected are the same either way.
+    requires: [pre_operative_assessment, surgeon_consultation, consent, anaesthesia_assessment,
+               operative_note, anaesthesia_record, post_operative_notes, nursing_records,
+               medication_records, investigation_reports, discharge_summary, bills, implant_invoice]
+
+  - key: open_cholecystectomy
+    label: Open cholecystectomy
+    note: An open abdominal operation under general anaesthesia.
+    requires: [pre_operative_assessment, surgeon_consultation, consent, anaesthesia_assessment,
+               operative_note, anaesthesia_record, post_operative_notes, nursing_records,
+               medication_records, investigation_reports, discharge_summary, bills, implant_invoice]
+
+  - key: appendicectomy
+    label: Appendicectomy
+    note: >-
+      Usually an emergency operation, so the pre-operative assessment is often brief and
+      recorded in the case papers rather than as a separate document.
+    requires: [pre_operative_assessment, surgeon_consultation, consent, anaesthesia_assessment,
+               operative_note, anaesthesia_record, post_operative_notes, nursing_records,
+               medication_records, investigation_reports, discharge_summary, bills, implant_invoice]
+
+  - key: hernia_repair
+    label: Hernia repair
+    note: >-
+      A mesh is used in most repairs and is billed as an implant; its invoice is expected
+      once it appears in the bill.
+    requires:
+      - pre_operative_assessment
+      - surgeon_consultation
+      - consent
+      - anaesthesia_assessment
+      - operative_note
+      - anaesthesia_record
+      - post_operative_notes
+      - nursing_records
+      - medication_records
+      - investigation_reports
+      - discharge_summary
+      - bills
+      - key: implant_invoice
+        label: Mesh invoice
+        description: The vendor invoice for the hernia mesh used in the repair.
+
+  - key: caesarean_section
+    label: Caesarean section
+    note: >-
+      Usually done under spinal anaesthesia, which is anaesthesia beyond local, so the
+      anaesthesia documents are expected.
+    requires: [pre_operative_assessment, surgeon_consultation, consent, anaesthesia_assessment,
+               operative_note, anaesthesia_record, post_operative_notes, nursing_records,
+               medication_records, investigation_reports, discharge_summary, bills, implant_invoice]
+
+  - key: hysterectomy
+    label: Hysterectomy
+    note: Abdominal, vaginal or laparoscopic; the documents expected are the same.
+    requires: [pre_operative_assessment, surgeon_consultation, consent, anaesthesia_assessment,
+               operative_note, anaesthesia_record, post_operative_notes, nursing_records,
+               medication_records, investigation_reports, discharge_summary, bills, implant_invoice]
+
+  - key: tonsillectomy
+    label: Tonsillectomy
+    note: Done under general anaesthesia, usually with a short stay.
+    requires: [pre_operative_assessment, surgeon_consultation, consent, anaesthesia_assessment,
+               operative_note, anaesthesia_record, post_operative_notes, nursing_records,
+               medication_records, investigation_reports, discharge_summary, bills, implant_invoice]
+
+  - key: angioplasty
+    label: Coronary angioplasty
+    note: >-
+      Usually done under local anaesthesia in the catheter laboratory, so the anaesthesia
+      documents are expected only where the records show more than that. A stent is placed in
+      almost every case, so its invoice is expected with the claim.
+    requires:
+      - pre_operative_assessment
+      - surgeon_consultation
+      - consent
+      - anaesthesia_assessment
+      - anaesthesia_record
+      - key: operative_note
+        label: Angioplasty procedure note
+        description: The cardiologist's record of the procedure, the vessels treated and the stents placed.
+      - post_operative_notes
+      - nursing_records
+      - medication_records
+      - investigation_reports
+      - discharge_summary
+      - bills
+      - key: implant_invoice
+        label: Stent invoice
+        description: The vendor invoice for each stent placed, with its batch and serial number.
+        applies_when: always
+        severity: critical
+
+  - key: ureteroscopy
+    label: Ureteroscopy / RIRS
+    note: >-
+      A ureteric stent is often left in place and billed as an implant; its invoice is
+      expected once it appears in the bill.
+    requires:
+      - pre_operative_assessment
+      - surgeon_consultation
+      - consent
+      - anaesthesia_assessment
+      - operative_note
+      - anaesthesia_record
+      - post_operative_notes
+      - nursing_records
+      - medication_records
+      - investigation_reports
+      - discharge_summary
+      - bills
+      - key: implant_invoice
+        label: Stent invoice
+        description: The vendor invoice for the ureteric stent, where one was placed.
+
+  - key: hip_replacement
+    label: Hip replacement
+    note: >-
+      Total or partial; either way a prosthesis is implanted, so its invoice is expected with
+      the claim rather than only when one is billed.
+    requires:
+      - pre_operative_assessment
+      - surgeon_consultation
+      - consent
+      - anaesthesia_assessment
+      - operative_note
+      - anaesthesia_record
+      - post_operative_notes
+      - nursing_records
+      - medication_records
+      - investigation_reports
+      - discharge_summary
+      - bills
+      - key: implant_invoice
+        label: Prosthesis invoice
+        description: The vendor invoice for the hip prosthesis, with its batch and serial number.
+        applies_when: always
+        severity: critical
+
+  - key: cabg
+    label: Coronary artery bypass grafting
+    note: >-
+      Open-heart surgery under general anaesthesia with an intensive-care stay. The grafts are
+      the patient's own vessels, so an implant invoice is expected only if one is billed.
+    requires: [pre_operative_assessment, surgeon_consultation, consent, anaesthesia_assessment,
+               operative_note, anaesthesia_record, post_operative_notes, nursing_records,
+               medication_records, investigation_reports, discharge_summary, bills, implant_invoice]
+
+  - key: turp
+    label: Transurethral resection of prostate
+    note: Usually under spinal anaesthesia, which is anaesthesia beyond local.
+    requires: [pre_operative_assessment, surgeon_consultation, consent, anaesthesia_assessment,
+               operative_note, anaesthesia_record, post_operative_notes, nursing_records,
+               medication_records, investigation_reports, discharge_summary, bills, implant_invoice]
+
+  - key: pcnl
+    label: Percutaneous nephrolithotomy
+    note: >-
+      Under general or spinal anaesthesia. A ureteric stent or nephrostomy tube is often left
+      in place; its invoice is expected once it appears in the bill.
+    requires:
+      - pre_operative_assessment
+      - surgeon_consultation
+      - consent
+      - anaesthesia_assessment
+      - operative_note
+      - anaesthesia_record
+      - post_operative_notes
+      - nursing_records
+      - medication_records
+      - investigation_reports
+      - discharge_summary
+      - bills
+      - key: implant_invoice
+        label: Stent invoice
+        description: The vendor invoice for the stent or tube left in place, where one was.
+
+  - key: fracture_fixation
+    label: Fracture fixation
+    note: >-
+      Internal fixation leaves an implant behind by definition — a plate, screws, a nail or
+      wires — so its invoice is expected with the claim.
+    requires:
+      - pre_operative_assessment
+      - surgeon_consultation
+      - consent
+      - anaesthesia_assessment
+      - operative_note
+      - anaesthesia_record
+      - post_operative_notes
+      - nursing_records
+      - medication_records
+      - investigation_reports
+      - discharge_summary
+      - bills
+      - key: implant_invoice
+        label: Implant invoice
+        description: The vendor invoice for the plates, screws, nails or wires used in the fixation.
+        applies_when: always
+        severity: critical
