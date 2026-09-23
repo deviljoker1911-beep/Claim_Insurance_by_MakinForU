@@ -260,6 +260,37 @@ back is still a lead. **A demo reset clears the claims and keeps the people.** W
 The gate is **off by default**, so local development, the test suite and an offline demo never see
 it.
 
+### Getting the email to arrive
+
+A code the mail server accepts is not a code that reached anyone. The first ones this sent landed
+in spam, and from the sending end that is indistinguishable from success: the API said sent, the
+log said sent, and the message was in the junk folder.
+
+Two things decide it, and both have to be right.
+
+**The domain has to authenticate the mail.** Publish all three:
+
+| Record | Why |
+|--------|-----|
+| **SPF** | says which servers may send for the domain |
+| **DKIM** | signs the message. Since 2024 Gmail treats mail without it as untrusted almost regardless of volume — this is the one that is usually missing |
+| **DMARC** | says what to do when the other two fail. Start at `p=none`, and tighten it only once DKIM is confirmed passing |
+
+Your mail provider generates the DKIM key; it goes in DNS as a TXT record at a selector such as
+`hostingermail1._domainkey`. Check it arrived intact — a record long enough to be split across
+two strings is a record long enough to be truncated by a careless paste:
+
+```bash
+dig +short <selector>._domainkey.<your domain> TXT
+```
+
+**And the message itself needs its headers.** `Date` and `Message-ID` are required of every
+message by RFC 5322, Python's `EmailMessage` adds neither, and filters score against their
+absence. The app sets both, with the Message-ID bound to the sending domain.
+
+Send yourself a code and look at `Authentication-Results` on what arrives: `dkim=pass` beside
+`spf=pass` is what you are after.
+
 ### Deploying to a subdomain
 
 One container serves the API and the built web app on a single port, with PostgreSQL beside it.
