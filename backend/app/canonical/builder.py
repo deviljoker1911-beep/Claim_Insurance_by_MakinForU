@@ -177,6 +177,47 @@ def _procedures(fields: list[ExtractedField], documents: dict[str, Document]) ->
     }
 
 
+def declared_label(key: str | None) -> str | None:
+    """What a declared procedure is called, including the two no document can name."""
+    if not key:
+        return None
+    from app.config_files import checklists_config
+    from app.analysis.normalize import PROCEDURES
+
+    for procedure in checklists_config()["procedures"]:
+        if procedure["key"] == key:
+            return procedure["label"]
+    return {k: label for k, label, _ in PROCEDURES}.get(key, key.replace("_", " "))
+
+
+def _with_declaration(section: dict, claim: Claim) -> dict:
+    """Fill the gap the documents left with what a person said, and say which one decided.
+
+    A document that names an operation is evidence; a declaration is a statement a person made
+    because no document did. So the documents always win. The declaration is kept either way —
+    it is part of the record — and when the documents have since named something else it is
+    marked superseded rather than quietly dropped.
+    """
+    section["source"] = "documents" if section.get("selected_key") else None
+    section["declared"] = None
+    section["declaration_superseded"] = False
+    key = claim.declared_procedure
+    if not key:
+        return section
+    section["declared"] = {
+        "key": key,
+        "label": declared_label(key),
+        "by": claim.declared_procedure_by,
+        "at": _iso(claim.declared_procedure_at),
+    }
+    if section.get("selected_key"):
+        section["declaration_superseded"] = section["selected_key"] != key
+        return section
+    section["selected_key"] = key
+    section["source"] = "declared"
+    return section
+
+
 def _documents_section(documents: list[Document], fields: list[ExtractedField]) -> dict:
     field_counts: dict[str, int] = {}
     for row in fields:
@@ -556,7 +597,7 @@ def build_claim_state(session: Session, claim: Claim) -> dict:
         "patient": _section("patient", fields, by_id),
         "admission": _section("admission", fields, by_id),
         "diagnosis": _section("diagnosis", fields, by_id),
-        "procedures": _procedures(fields, by_id),
+        "procedures": _with_declaration(_procedures(fields, by_id), claim),
         "doctors": _section("doctors", fields, by_id),
         "investigations": _investigations(documents, fields, by_id),
         "documents": _documents_section(documents, fields),

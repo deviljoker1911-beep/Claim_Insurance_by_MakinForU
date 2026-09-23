@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.db import get_session
-from app.models import QUESTION_PENDING_STATUSES, Question
+from app.models import PROCEDURE_QUESTION, QUESTION_PENDING_STATUSES, Question
 from app.schemas import (
     DocumentOut,
     QuestionAnswerRequest,
@@ -30,7 +30,19 @@ router = APIRouter(tags=["questions"])
 
 
 def _payload(question: Question) -> QuestionOut:
-    actions = ["yes_have_it", "not_available", "not_applicable"] if question.status in QUESTION_PENDING_STATUSES else []
+    pending = question.status in QUESTION_PENDING_STATUSES
+    if question.requirement_key == PROCEDURE_QUESTION:
+        # Not about a document, so none of the document answers apply to it.
+        from app.checklist.engine import configured_procedures
+        from app.models import SURGICAL_OTHER
+        from app.canonical.builder import declared_label
+
+        actions = ["operation", "no_operation"] if pending else []
+        choices = [*configured_procedures(), {"key": SURGICAL_OTHER, "label": declared_label(SURGICAL_OTHER)}]
+        return QuestionOut.model_validate(question).model_copy(
+            update={"actions_available": actions, "choices": choices if pending else []}
+        )
+    actions = ["yes_have_it", "not_available", "not_applicable"] if pending else []
     return QuestionOut.model_validate(question).model_copy(update={"actions_available": actions})
 
 
@@ -59,6 +71,25 @@ def claim_questions(claim_id: str, session: Session = Depends(get_session)) -> Q
         )
 
 
+def _declare(session: Session, question: Question, request: QuestionAnswerRequest) -> QuestionAnswerResult:
+    """Record whether there was an operation, then bring the claim up to date at once.
+
+    The answer decides which checklist applies, and so which findings stand and what else is
+    asked. Leaving that to the next page load would show the operator their answer taking no
+    effect.
+    """
+    actor = get_settings().operator_name
+    try:
+        claim = question_service.declare_procedure(
+            session, question, request.answer, procedure_key=request.procedure_key, actor=actor
+        )
+    except question_service.AnswerNotAllowed as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    reanalysis_service.run(session, claim, trigger="procedure_declared", actor=actor)
+    session.refresh(question)
+    return QuestionAnswerResult(question=_payload(question), upload=None)
+
+
 @router.post("/questions/{question_id}/answer", response_model=QuestionAnswerResult)
 def answer_question(
     question_id: str, request: QuestionAnswerRequest, session: Session = Depends(get_session)
@@ -70,6 +101,8 @@ def answer_question(
     """
     with WORKSPACE_LOCK.shared():
         question = _question_or_404(session, question_id)
+        if question.requirement_key == PROCEDURE_QUESTION:
+            return _declare(session, question, request)
         try:
             question = question_service.answer(
                 session,
@@ -113,6 +146,13 @@ def upload_for_question(
 
     with WORKSPACE_LOCK.shared():
         question = _question_or_404(session, question_id)
+        # Refused before anything is written: past this point the files are stored, and refusing
+        # afterwards would leave them in the claim attached to nothing.
+        if question.requirement_key == PROCEDURE_QUESTION:
+            raise HTTPException(
+                status_code=409,
+                detail="This question is answered with whether an operation was performed, not with a document.",
+            )
         claim = get_claim_or_404(session, question.claim_id)
         incoming = [IncomingFile(upload.filename, upload.file, upload.content_type) for upload in files]
         try:

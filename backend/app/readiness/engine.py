@@ -243,10 +243,20 @@ def evaluate(state: dict, questions: list[dict]) -> dict:
             {
                 "kind": "requirement",
                 "key": "documents" if nothing_read else "procedure",
-                "label": "Documents to read" if nothing_read else "A procedure the documents name",
+                "label": (
+                    "Documents to read"
+                    if nothing_read
+                    else "Whether an operation was performed"
+                    if checklist.get("awaiting_procedure")
+                    else "A procedure the documents name"
+                ),
                 "detail": detail,
                 "action": "Upload the claim documents and run the analysis."
                 if nothing_read
+                # No upload answers this when there was no operation to document, so the
+                # question is what is offered first.
+                else "Answer whether an operation was performed, or upload a document that names it."
+                if checklist.get("awaiting_procedure")
                 else "Upload the documents that name the procedure.",
             }
         )

@@ -20,9 +20,13 @@ required_documents:
   - key: operative_note
     label: Operative note
     doc_types: [operative_note]
+    # Only an operation leaves one. Not required once a person says none was performed.
+    surgical: true
   - key: anaesthesia_record
     label: Anaesthesia record
     doc_types: [anaesthesia_record]
+    # Only an operation leaves one. Not required once a person says none was performed.
+    surgical: true
   - key: discharge_summary
     label: Discharge summary
     doc_types: [discharge_summary]

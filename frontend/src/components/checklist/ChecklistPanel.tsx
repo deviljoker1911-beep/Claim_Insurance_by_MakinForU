@@ -2,6 +2,7 @@ import { CircleCheck, CircleMinus, CircleX, FileText, TriangleAlert } from 'luci
 import { useState, type ComponentType } from 'react'
 
 import { cx } from '../../lib/cx'
+import { formatDateTime } from '../../lib/format'
 import type { ChecklistItem, ChecklistSection, ChecklistStatus, Severity } from '../../lib/types'
 import { Badge } from '../ui/Badge'
 import type { Tone } from '../ui/styles'
@@ -153,17 +154,33 @@ export function ProcedureSummary({ checklist }: { checklist: ChecklistSection })
         <p className="text-[15px] font-semibold text-slate-900">{procedure.label}</p>
         {procedure.key && <span className="font-mono text-xs text-slate-400">{procedure.key}</span>}
       </div>
-      <p className="mt-1 text-sm text-slate-500">
-        {procedure.source_count > 0
-          ? `Named by ${procedure.source_count} document${procedure.source_count === 1 ? '' : 's'}`
-          : 'Not named by any document yet'}
-        {procedure.written_as.length === 1 && `, written as “${procedure.written_as[0]}”`}
-        {procedure.written_as.length > 1 &&
-          `, written as ${procedure.written_as.slice(0, 3).join(' · ')}${
-            procedure.written_as.length > 3 ? ` and ${procedure.written_as.length - 3} more` : ''
-          }`}
-        .
-      </p>
+      {procedure.source === 'declared' && procedure.declared ? (
+        // Said, not read. The whole product rests on not presenting one as the other.
+        <p className="mt-1 text-sm text-slate-500" data-testid="procedure-declared">
+          <Badge tone="info">Declared by {procedure.declared.by ?? 'the operator'}</Badge>{' '}
+          No document names an operation, so this is the operator&rsquo;s answer
+          {procedure.declared.at ? ` from ${formatDateTime(procedure.declared.at)}` : ''}, not something read from the
+          documents.
+        </p>
+      ) : (
+        <p className="mt-1 text-sm text-slate-500">
+          {procedure.source_count > 0
+            ? `Named by ${procedure.source_count} document${procedure.source_count === 1 ? '' : 's'}`
+            : 'Not named by any document yet'}
+          {procedure.written_as.length === 1 && `, written as “${procedure.written_as[0]}”`}
+          {procedure.written_as.length > 1 &&
+            `, written as ${procedure.written_as.slice(0, 3).join(' · ')}${
+              procedure.written_as.length > 3 ? ` and ${procedure.written_as.length - 3} more` : ''
+            }`}
+          .
+        </p>
+      )}
+      {procedure.declaration_superseded && procedure.declared && (
+        <p className="mt-1.5 text-xs text-amber-800" data-testid="procedure-superseded">
+          The operator earlier answered &ldquo;{procedure.declared.label}&rdquo;. A document has since named this
+          operation, so the document is what the claim is checked against.
+        </p>
+      )}
       {procedure.also_named.length > 0 && (
         <p className="mt-1 text-xs text-slate-500">
           Also named: {procedure.also_named.map((other) => `${other.label} (${other.source_count})`).join(', ')}.

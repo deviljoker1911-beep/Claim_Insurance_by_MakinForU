@@ -89,8 +89,13 @@ def test_queueing_is_recorded_and_the_claim_moves_to_processing(client, claim):
         # the checklist asks for what is missing, and the difference is recorded.
         "reanalysis_started",
         "validation_completed",
+        # An admission form alone names no operation, so the claim asks whether there was one.
+        # Until that question existed a claim like this sat with no checklist and asked nothing.
+        "question_generated",
         "reanalysis_completed",
     ]
+    asked = [q["requirement_key"] for q in client.get(f"/api/claims/{claim['id']}/questions").json()["items"]]
+    assert asked == ["procedure"], asked
     assert client.get(f"/api/claims/{claim['id']}").json()["status"] == "processed"
 
 

@@ -41,6 +41,17 @@ conditions:
 # The catalogue. A procedure lists the requirements it needs and may override severity,
 # required or applies_when for its own case.
 requirements:
+  - key: admission_record
+    label: Admission record
+    description: The record of the patient being admitted, with the reason for admission.
+    # The same types rule R001 accepts, so the checklist and the finding cannot disagree
+    # about whether this claim has one.
+    doc_types: [admission_record]
+    severity: critical
+    question: Do you have the admission record for this stay?
+    why: No admission record was found for this stay.
+    resolution: Upload the admission record.
+
   - key: pre_operative_assessment
     label: Pre-operative assessment
     description: The fitness assessment recorded before the operation.
@@ -454,3 +465,46 @@ procedures:
         description: The vendor invoice for the plates, screws, nails or wires used in the fixation.
         applies_when: always
         severity: critical
+
+  # --- Answered, not read --------------------------------------------------------------------
+  #
+  # When no document names an operation, the claim asks the operator whether one was performed.
+  # These two are what that answer can select. No document can name them, which is what
+  # `declared_only` says: they are chosen by a person, and a checklist built from one says so.
+
+  - key: medical_management
+    label: Medical treatment, no operation
+    declared_only: true
+    note: >-
+      The operator has said no operation was performed during this admission, so nothing is
+      asked of an operation: no operative note, no anaesthesia record, no implant.
+    requires:
+      - admission_record
+      - key: surgeon_consultation
+        label: Treating doctor's consultation
+        description: The consultation that records why the patient was admitted.
+        question: Do you have the treating doctor's consultation note for this admission?
+        why: The consultation that records the reason for admission is not among the documents.
+        resolution: Upload the consultation note of the treating doctor.
+      - key: consent
+        label: Consent for admission and treatment
+        description: The consent signed by the patient or the attendant on admission.
+        severity: review
+        question: Do you have the signed consent for admission and treatment?
+        why: No consent form was found for this admission.
+        resolution: Upload the signed consent for admission and treatment.
+      - nursing_records
+      - medication_records
+      - investigation_reports
+      - discharge_summary
+      - bills
+
+  - key: surgical_other
+    label: An operation not in the list
+    declared_only: true
+    note: >-
+      The operator has said an operation was performed that is not one this checklist
+      recognises, so the documents any operation needs are asked for.
+    requires: [pre_operative_assessment, surgeon_consultation, consent, anaesthesia_assessment,
+               operative_note, anaesthesia_record, post_operative_notes, nursing_records,
+               medication_records, investigation_reports, discharge_summary, bills, implant_invoice]

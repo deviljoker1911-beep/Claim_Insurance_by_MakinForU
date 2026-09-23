@@ -17,7 +17,12 @@ from app.analysis.classify import type_label
 from app.audit import record_event
 from app.config import get_settings
 from app.models import (
+    ANSWER_NO_OPERATION,
     ANSWER_NOT_APPLICABLE,
+    ANSWER_OPERATION,
+    MEDICAL_MANAGEMENT,
+    PROCEDURE_QUESTION,
+    SURGICAL_OTHER,
     ANSWER_NOT_AVAILABLE,
     ANSWER_YES_HAVE_IT,
     QUESTION_ANSWERED,
@@ -101,7 +106,9 @@ def refresh(session: Session, claim: Claim, checklist: dict, *, actor: str | Non
         record_event(
             session,
             "question_generated",
-            f"Asked for the {ask.requirement_label.lower()}",
+            "Asked whether an operation was performed"
+            if ask.requirement_key == PROCEDURE_QUESTION
+            else f"Asked for the {ask.requirement_label.lower()}",
             claim_id=claim.id,
             actor="system",
             details={
@@ -124,7 +131,9 @@ def refresh(session: Session, claim: Claim, checklist: dict, *, actor: str | Non
         record_event(
             session,
             "question_resolved",
-            f"The {question.requirement_label.lower()} is now in the claim",
+            "A document now names the operation"
+            if question.requirement_key == PROCEDURE_QUESTION
+            else f"The {question.requirement_label.lower()} is now in the claim",
             claim_id=claim.id,
             document_id=document.id if document else None,
             actor="system",
@@ -196,8 +205,19 @@ def answer(
     # Hold the question before reading the status that decides whether it still takes an answer,
     # so a double-click records one answer and refuses the second rather than recording both.
     locked(session, question)
+    if question.requirement_key == PROCEDURE_QUESTION:
+        raise AnswerNotAllowed(
+            "This question is answered with whether an operation was performed, not with a document."
+        )
     if question.status not in QUESTION_PENDING_STATUSES:
         raise AnswerNotAllowed(f"This question is {question.status.replace('_', ' ')} and takes no further answer.")
+    # Refused by name rather than left to the branches below, whose last one catches everything:
+    # "no_operation" sent to a question about a consent form would otherwise close it as not
+    # applicable, and say nothing about having done so.
+    if response not in (ANSWER_YES_HAVE_IT, ANSWER_NOT_AVAILABLE, ANSWER_NOT_APPLICABLE):
+        raise AnswerNotAllowed(
+            "This question asks for a document; it is answered with whether you have it."
+        )
     reason = (reason or "").strip()
     if response in (ANSWER_NOT_AVAILABLE, ANSWER_NOT_APPLICABLE) and not reason:
         raise ReasonRequired("A reason is required so the decision is on the record.")
@@ -250,7 +270,83 @@ def answer(
     return question
 
 
+def declare_procedure(
+    session: Session,
+    question: Question,
+    response: str,
+    *,
+    procedure_key: str | None,
+    actor: str,
+) -> Claim:
+    """Record whether an operation was performed, and which, when no document named one.
+
+    Unlike a document question, the answer settles it: nothing is going to be uploaded to prove
+    an operation did not happen. What was said, by whom and when is kept on the claim, where the
+    canonical claim reads it — and it only ever fills the gap the documents left.
+    """
+    from app.checklist.engine import configured_procedures
+
+    locked(session, question)
+    if question.requirement_key != PROCEDURE_QUESTION:
+        raise AnswerNotAllowed("Only the question about the operation takes this answer.")
+    if question.status not in QUESTION_PENDING_STATUSES:
+        raise AnswerNotAllowed(f"This question is {question.status.replace('_', ' ')} and takes no further answer.")
+
+    if response == ANSWER_NO_OPERATION:
+        key = MEDICAL_MANAGEMENT
+    elif response == ANSWER_OPERATION:
+        offered = {item["key"] for item in configured_procedures()} | {SURGICAL_OTHER}
+        if not procedure_key:
+            raise AnswerNotAllowed("Say which operation was performed, or that it is not in the list.")
+        if procedure_key not in offered:
+            raise AnswerNotAllowed(f"{procedure_key} is not an operation this checklist knows.")
+        key = procedure_key
+    else:
+        raise AnswerNotAllowed("The answer is either that an operation was performed, or that none was.")
+
+    from app.canonical.builder import declared_label
+
+    claim = session.get(Claim, question.claim_id)
+    locked(session, claim)
+    previous = claim.declared_procedure
+    now = utcnow()
+    claim.declared_procedure = key
+    claim.declared_procedure_by = actor
+    claim.declared_procedure_at = now
+
+    label = declared_label(key)
+    question.answer = response
+    question.answer_reason = label
+    question.answered_by = actor
+    question.answered_at = now
+    question.status = QUESTION_RESOLVED
+    question.resolved_at = now
+
+    record_event(
+        session,
+        "procedure_declared",
+        f"{actor} said: {'no operation was performed' if key == MEDICAL_MANAGEMENT else f'the operation was {label}'}",
+        claim_id=claim.id,
+        actor=actor,
+        details={
+            "question_id": question.id,
+            "answer": response,
+            "procedure": key,
+            "procedure_label": label,
+            "previous": previous,
+            # Recorded as a statement, so no one later reads it as something the documents said.
+            "source": "declared",
+        },
+    )
+    session.commit()
+    return claim
+
+
 def attach_documents(session: Session, question: Question, documents: list[Document], *, actor: str) -> None:
+    if question.requirement_key == PROCEDURE_QUESTION:
+        raise AnswerNotAllowed(
+            "This question is answered with whether an operation was performed, not with a document."
+        )
     """Record that these documents were uploaded in answer to this question."""
     for document in documents:
         document.question_id = question.id

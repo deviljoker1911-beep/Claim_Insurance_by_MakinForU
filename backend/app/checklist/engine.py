@@ -36,10 +36,15 @@ PROCEDURE_LABELS = {key: label for key, label, _ in PROCEDURES}
 
 
 def configured_procedures() -> list[dict[str, str]]:
-    """The procedures a checklist exists for."""
+    """The operations a checklist exists for — the ones a document can name.
+
+    The answer-only entries (no operation, an operation not in the list) are not operations a
+    document names, so they are not offered as one.
+    """
     return [
         {"key": procedure["key"], "label": procedure["label"]}
         for procedure in checklists_config()["procedures"]
+        if not procedure.get("declared_only")
     ]
 
 
@@ -146,10 +151,24 @@ def build_checklist(state: dict, findings: list[dict] | None = None) -> dict:
     procedure_key = state["procedures"].get("selected_key")
     procedure = _procedure_config(procedure_key)
     detected = _detected(state, procedure_key, procedure)
+    # Documents have been read, none names an operation and nobody has said whether there was
+    # one. That is a question for a person, not a gap to wait out: no upload is going to answer
+    # it if the admission had no operation at all.
+    awaiting_procedure = procedure_key is None and bool(usable) and not provisional
 
     if procedure is None:
+        if procedure_key:
+            note = f"No checklist is configured for {detected['label']}."
+        elif awaiting_procedure:
+            note = (
+                "No document names an operation. Say whether one was performed, and the "
+                "checklist for it applies."
+            )
+        else:
+            note = "No procedure is named in the documents yet, so no checklist applies."
         return {
             "available": False,
+            "awaiting_procedure": awaiting_procedure,
             "checklist_version": int(config.get("version", 1)),
             "procedure": detected,
             "provisional": provisional,
@@ -157,11 +176,7 @@ def build_checklist(state: dict, findings: list[dict] | None = None) -> dict:
             "summary": _summarise([]),
             "items": [],
             "configured_procedures": configured_procedures(),
-            "note": (
-                f"No checklist is configured for {detected['label']}."
-                if procedure_key
-                else "No procedure is named in the documents yet, so no checklist applies."
-            ),
+            "note": note,
         }
 
     by_document = _findings_by_document(findings)
@@ -190,6 +205,7 @@ def build_checklist(state: dict, findings: list[dict] | None = None) -> dict:
         "summary": _summarise(items),
         "items": items,
         "configured_procedures": configured_procedures(),
+        "awaiting_procedure": False,
         "note": procedure.get("note"),
     }
 
@@ -214,6 +230,11 @@ def _detected(state: dict, procedure_key: str | None, procedure: dict | None) ->
         "key": procedure_key,
         "label": label or "no procedure",
         "has_checklist": procedure is not None,
+        # "documents" when a document named it, "declared" when a person said it because none
+        # did. The UI and the report say which, so a statement is never shown as a reading.
+        "source": section.get("source"),
+        "declared": section.get("declared"),
+        "declaration_superseded": bool(section.get("declaration_superseded")),
         "source_count": selected["source_count"] if selected else 0,
         "documents": [
             {

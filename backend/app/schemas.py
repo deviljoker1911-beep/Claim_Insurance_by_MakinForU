@@ -768,6 +768,15 @@ class ChecklistProcedureNamedOut(BaseModel):
     source_count: int = 0
 
 
+class ChecklistProcedureDeclaredOut(BaseModel):
+    """What a person said about the operation, and when — kept whether or not it still decides."""
+
+    key: str
+    label: str | None = None
+    by: str | None = None
+    at: str | None = None
+
+
 class ChecklistProcedureOut(BaseModel):
     """The procedure the checklist was built for, and what named it."""
 
@@ -778,6 +787,12 @@ class ChecklistProcedureOut(BaseModel):
     documents: list[ChecklistProcedureSourceOut] = []
     written_as: list[str] = []
     also_named: list[ChecklistProcedureNamedOut] = []
+    # "documents" when a document named it, "declared" when a person said it because none did.
+    source: Literal["documents", "declared"] | None = None
+    declared: ChecklistProcedureDeclaredOut | None = None
+    # A person said one thing and the documents have since named another. The documents decide;
+    # this says the earlier answer existed, so it is not silently lost.
+    declaration_superseded: bool = False
 
 
 class ChecklistSectionOut(BaseModel):
@@ -785,6 +800,8 @@ class ChecklistSectionOut(BaseModel):
     checklist_version: int
     procedure: ChecklistProcedureOut
     provisional: bool = False
+    # Documents are read, none names an operation, and nobody has said whether there was one.
+    awaiting_procedure: bool = False
     count: int
     summary: dict[str, Any] = {}
     items: list[ChecklistItemOut] = []
@@ -878,6 +895,10 @@ class QuestionOut(BaseModel):
     created_at: UTCDateTime
     updated_at: UTCDateTime
     actions_available: list[str] = []
+    # Only on the question about the operation: the operations that can be chosen, then the one
+    # for an operation not in the list. Carried with the question so answering it takes no
+    # second request.
+    choices: list[dict[str, str]] = []
 
     @field_validator("last_upload", mode="before")
     @classmethod
@@ -895,8 +916,12 @@ class QuestionsResponse(BaseModel):
 
 
 class QuestionAnswerRequest(BaseModel):
-    answer: Literal["yes_have_it", "not_available", "not_applicable"]
+    # The first three answer a question about a document. The last two answer the one question
+    # that is not: whether an operation was performed. Each kind refuses the other's answers.
+    answer: Literal["yes_have_it", "not_available", "not_applicable", "operation", "no_operation"]
     reason: str | None = Field(default=None, max_length=500)
+    # With "operation": which one. A procedure key, or "surgical_other" for one not in the list.
+    procedure_key: str | None = Field(default=None, max_length=64, pattern=r"^[a-z_]+$")
 
     @field_validator("reason")
     @classmethod

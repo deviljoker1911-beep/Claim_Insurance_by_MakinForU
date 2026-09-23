@@ -221,10 +221,21 @@ export function claimViews(queryClient: ReturnType<typeof useQueryClient>, claim
 export function useAnswerQuestion(claimId: string) {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: ({ question, answer, reason }: { question: Question; answer: QuestionAnswer; reason?: string }) =>
+    mutationFn: ({
+      question,
+      answer,
+      reason,
+      procedureKey,
+    }: {
+      question: Question
+      answer: QuestionAnswer
+      reason?: string
+      /** With 'operation': which one was performed. */
+      procedureKey?: string
+    }) =>
       api<QuestionAnswerResult>(`/questions/${encodeURIComponent(question.id)}/answer`, {
         method: 'POST',
-        body: JSON.stringify({ answer, reason: reason ?? null }),
+        body: JSON.stringify({ answer, reason: reason ?? null, procedure_key: procedureKey ?? null }),
       }),
     onSuccess: () => claimViews(queryClient, claimId),
   })

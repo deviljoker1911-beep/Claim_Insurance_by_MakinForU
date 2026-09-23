@@ -643,6 +643,11 @@ export interface ChecklistProcedure {
   documents: { document_id: string; document_name: string; value: string | null; page: number | null }[]
   written_as: string[]
   also_named: { key: string | null; label: string; source_count: number }[]
+  /** 'documents' when a document named it; 'declared' when a person said it because none did. */
+  source: 'documents' | 'declared' | null
+  declared: { key: string; label: string | null; by: string | null; at: string | null } | null
+  /** A person said one thing and the documents have since named another; the documents decide. */
+  declaration_superseded: boolean
 }
 
 export interface ChecklistSummary {
@@ -658,6 +663,8 @@ export interface ChecklistSummary {
 
 export interface ChecklistSection {
   available: boolean
+  /** Documents are read, none names an operation, and nobody has said whether there was one. */
+  awaiting_procedure: boolean
   checklist_version: number
   procedure: ChecklistProcedure
   provisional: boolean
@@ -676,7 +683,11 @@ export interface ChecklistResponse extends ChecklistSection {
 /** --- Questions, re-analysis and the assistant (phase 7) --- */
 
 export type QuestionStatus = 'open' | 'answered' | 'resolved' | 'documented_unavailable' | 'not_applicable'
-export type QuestionAnswer = 'yes_have_it' | 'not_available' | 'not_applicable'
+/** Answers to a question that asks for a document. */
+export type DocumentAnswer = 'yes_have_it' | 'not_available' | 'not_applicable'
+/** Answers to the one question that does not: whether an operation was performed. */
+export type OperationAnswer = 'operation' | 'no_operation'
+export type QuestionAnswer = DocumentAnswer | OperationAnswer
 
 export interface QuestionUpload {
   document_id: string
@@ -711,6 +722,8 @@ export interface Question {
   created_at: string
   updated_at: string
   actions_available: QuestionAnswer[]
+  /** Only on the question about the operation: what can be chosen as the one performed. */
+  choices: { key: string; label: string }[]
 }
 
 export interface QuestionsResponse {

@@ -22,7 +22,12 @@ const ANSWER_LABEL: Record<QuestionAnswer, string> = {
   yes_have_it: 'Yes, I have it',
   not_available: 'Not available',
   not_applicable: 'Not applicable',
+  operation: 'Yes, there was an operation',
+  no_operation: 'No operation — medical treatment only',
 }
+
+/** The one question that asks what happened rather than for a document. */
+const PROCEDURE_QUESTION = 'procedure'
 
 /** What the claim is asking the operator for, and the ways to answer it. */
 export function QuestionsPanel({ questions, claimId }: { questions: Question[]; claimId: string }) {
@@ -58,11 +63,160 @@ export function QuestionsPanel({ questions, claimId }: { questions: Question[]; 
         )}
       </div>
       <ul className="divide-y divide-slate-100">
-        {visible.map((question) => (
-          <QuestionRow key={question.id} question={question} claimId={claimId} />
-        ))}
+        {visible.map((question) =>
+          question.requirement_key === PROCEDURE_QUESTION ? (
+            <ProcedureQuestionRow key={question.id} question={question} claimId={claimId} />
+          ) : (
+            <QuestionRow key={question.id} question={question} claimId={claimId} />
+          ),
+        )}
       </ul>
     </div>
+  )
+}
+
+/**
+ * Whether an operation was performed, asked when no document names one.
+ *
+ * Its answer decides which documents the claim needs, so it settles on the spot: nothing is
+ * uploaded to prove an operation did not happen. What is chosen is recorded as the operator's
+ * statement, and the documents still win if one later names the operation.
+ */
+function ProcedureQuestionRow({ question, claimId }: { question: Question; claimId: string }) {
+  const status = STATUS[question.status]
+  const answer = useAnswerQuestion(claimId)
+  const [choosing, setChoosing] = useState(false)
+  const [procedure, setProcedure] = useState('')
+  const [error, setError] = useState<string | null>(null)
+  const open = question.actions_available.length > 0
+
+  function send(choice: 'operation' | 'no_operation', procedureKey?: string) {
+    setError(null)
+    answer.mutate(
+      { question, answer: choice, procedureKey },
+      {
+        onSuccess: () => setChoosing(false),
+        onError: (problem) => setError(errorMessage(problem)),
+      },
+    )
+  }
+
+  return (
+    <li
+      className="px-5 py-4"
+      data-testid="question"
+      data-question={question.requirement_key}
+      data-status={question.status}
+    >
+      <div className="flex items-start gap-3">
+        <span className="mt-0.5 grid size-6 shrink-0 place-items-center rounded-full bg-brand-50 text-brand-600">
+          {question.status === 'resolved' ? <CircleCheck className="size-3.5" /> : <CircleHelp className="size-3.5" />}
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="text-sm font-medium text-slate-900">{question.question}</p>
+            <Badge tone={status.tone}>{status.label}</Badge>
+            {question.severity === 'critical' && question.status !== 'resolved' && (
+              <Badge tone="danger">critical</Badge>
+            )}
+          </div>
+          <p className="mt-0.5 text-sm text-slate-600">{question.reason}</p>
+
+          {question.status === 'resolved' && question.answer_reason && (
+            <p className="mt-1.5 rounded-md bg-slate-50 px-2.5 py-1.5 text-xs text-slate-600" data-testid="procedure-answer">
+              <span className="font-medium">{question.answered_by ?? 'Recorded'}:</span>{' '}
+              {question.answer === 'no_operation' ? 'no operation was performed' : `the operation was ${question.answer_reason}`}
+            </p>
+          )}
+
+          {error && (
+            <div className="mt-2">
+              <Notice tone="danger" onDismiss={() => setError(null)}>
+                {error}
+              </Notice>
+            </div>
+          )}
+
+          {open && !choosing && (
+            <div className="mt-2.5 flex flex-wrap gap-2">
+              <Button
+                size="sm"
+                disabled={answer.isPending}
+                data-testid="question-operation"
+                onClick={() => setChoosing(true)}
+              >
+                {ANSWER_LABEL.operation}
+              </Button>
+              <Button
+                size="sm"
+                variant="secondary"
+                disabled={answer.isPending}
+                data-testid="question-no_operation"
+                onClick={() => send('no_operation')}
+              >
+                {answer.isPending ? <Loader2 className="size-4 animate-spin" /> : null}
+                {ANSWER_LABEL.no_operation}
+              </Button>
+            </div>
+          )}
+
+          {open && choosing && (
+            <form
+              className="mt-2.5 space-y-2"
+              data-testid="procedure-form"
+              onSubmit={(event) => {
+                event.preventDefault()
+                if (!procedure) {
+                  setError('Choose the operation that was performed.')
+                  return
+                }
+                send('operation', procedure)
+              }}
+            >
+              <label className="block text-xs font-medium text-slate-600" htmlFor={`procedure-${question.id}`}>
+                Which operation?
+              </label>
+              <select
+                id={`procedure-${question.id}`}
+                data-testid="procedure-choice"
+                value={procedure}
+                onChange={(event) => setProcedure(event.target.value)}
+                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus-visible:outline-2 focus-visible:outline-brand-500"
+              >
+                <option value="">Choose…</option>
+                {question.choices.map((choice) => (
+                  <option key={choice.key} value={choice.key}>
+                    {choice.label}
+                  </option>
+                ))}
+              </select>
+              <p className="text-xs text-slate-500">
+                Recorded as your answer, not as something read from the documents. If a document later names the
+                operation, the document is what the claim is checked against.
+              </p>
+              <div className="flex gap-2">
+                <Button size="sm" type="submit" disabled={answer.isPending} data-testid="procedure-submit">
+                  {answer.isPending ? <Loader2 className="size-4 animate-spin" /> : null}
+                  Record the operation
+                </Button>
+                <Button
+                  size="sm"
+                  type="button"
+                  variant="ghost"
+                  onClick={() => {
+                    setChoosing(false)
+                    setProcedure('')
+                    setError(null)
+                  }}
+                >
+                  Cancel
+                </Button>
+              </div>
+            </form>
+          )}
+        </div>
+      </div>
+    </li>
   )
 }
 

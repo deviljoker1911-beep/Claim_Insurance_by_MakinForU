@@ -130,6 +130,15 @@ class Claim(Base):
     # was given to; when that claim changes, the approval is superseded rather than carried on.
     approved_input_fingerprint: Mapped[str | None] = mapped_column(String(64))
     superseded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    # --- what a person said about the operation, when no document named one ---
+    # A procedure key, MEDICAL_MANAGEMENT for "no operation was performed", or SURGICAL_OTHER for
+    # an operation outside the list. It fills the gap the documents left and never overrides
+    # them: a document that names an operation is always the procedure the claim is checked
+    # against. Recorded with who said it and when, because it is a statement, not a reading.
+    declared_procedure: Mapped[str | None] = mapped_column(String(64))
+    declared_procedure_by: Mapped[str | None] = mapped_column(String(120))
+    declared_procedure_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_by: Mapped[str] = mapped_column(String(120))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
@@ -517,6 +526,12 @@ WORKSPACE_MODELS = (
     AuditEvent,
 )
 
+# Declared-only procedures: what an operator can answer that no document names.
+MEDICAL_MANAGEMENT = "medical_management"
+SURGICAL_OTHER = "surgical_other"
+# The question that asks for one is not about a document, so it has no requirement of its own.
+PROCEDURE_QUESTION = "procedure"
+
 PROCESSING_STATUSES = ("pending", "queued", "processing", "processed", "failed")
 
 # Finding lifecycle. A finding is raised by a rule and moved on by a person.
@@ -558,6 +573,9 @@ DOCUMENT_UNFINISHED_STATUSES = ("pending", "queued", "processing")
 ANSWER_YES_HAVE_IT = "yes_have_it"
 ANSWER_NOT_AVAILABLE = "not_available"
 ANSWER_NOT_APPLICABLE = "not_applicable"
+# The two answers to "was an operation performed?" — the only question not about a document.
+ANSWER_OPERATION = "operation"
+ANSWER_NO_OPERATION = "no_operation"
 ANSWERS = (ANSWER_YES_HAVE_IT, ANSWER_NOT_AVAILABLE, ANSWER_NOT_APPLICABLE)
 SEVERITIES = ("critical", "review", "warning", "info")
 # Most serious first. This is the order findings are listed in wherever a reader sees them, so it

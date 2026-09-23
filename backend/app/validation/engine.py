@@ -240,8 +240,19 @@ def check_required_documents(ctx: Context) -> CheckOutcome:
         return outcome
 
     present_types = {document.doc_type for document in ctx.active if document.doc_type}
+    # Only a person saying no operation was performed releases the operative note and the
+    # anaesthesia record. Not finding an operation named is not the same thing: a surgical claim
+    # whose procedure could not be read would otherwise lose the two documents it most needs,
+    # which is a finding missed rather than a finding wrong — the worse of the two.
+    from app.models import MEDICAL_MANAGEMENT
+
+    no_operation = (ctx.state.get("procedures") or {}).get("selected_key") == MEDICAL_MANAGEMENT
+    released = []
     missing = []
     for requirement in requirements:
+        if no_operation and requirement.get("surgical"):
+            released.append(requirement["label"])
+            continue
         if set(requirement["doc_types"]) & present_types:
             continue
         missing.append(requirement)
@@ -257,11 +268,15 @@ def check_required_documents(ctx: Context) -> CheckOutcome:
                 },
             )
         )
+    released_note = (
+        f" Not required, because no operation was performed: {', '.join(released)}." if released else ""
+    )
     if missing:
         outcome.status = FAIL
-        outcome.detail = f"Missing: {', '.join(item['label'] for item in missing)}."
+        outcome.detail = f"Missing: {', '.join(item['label'] for item in missing)}.{released_note}"
     else:
-        outcome.detail = f"All {len(requirements)} required document types are present."
+        checked = len(requirements) - len(released)
+        outcome.detail = f"All {checked} required document types are present.{released_note}"
     return outcome
 
 
