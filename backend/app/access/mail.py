@@ -11,6 +11,7 @@ from __future__ import annotations
 import logging
 import smtplib
 from email.message import EmailMessage
+from email.utils import formatdate, make_msgid, parseaddr
 
 from app.config import get_settings
 
@@ -37,6 +38,26 @@ def _body(code: str, minutes: int) -> tuple[str, str]:
     return subject, text
 
 
+def build_message(email: str, code: str, *, sender: str) -> EmailMessage:
+    """The message as it goes on the wire, separated out so it can be checked without sending."""
+    subject, text = _body(code, get_settings().access_code_ttl_minutes)
+    message = EmailMessage()
+    message["Subject"] = subject
+    message["From"] = sender
+    message["To"] = email
+    # Date and Message-ID are required of every message (RFC 5322) and their absence is one of
+    # the cheapest things a spam filter can score against. Python adds neither, so a code that
+    # sent perfectly well went to the junk folder for want of two headers.
+    message["Date"] = formatdate(localtime=True)
+    domain = (parseaddr(sender)[1].rpartition("@")[2] or "localhost").strip()
+    message["Message-ID"] = make_msgid(domain=domain)
+    # Says this was sent by a machine in response to an action, so nothing tries to reply to it
+    # and no holiday autoresponder answers back (RFC 3834).
+    message["Auto-Submitted"] = "auto-generated"
+    message.set_content(text)
+    return message
+
+
 def deliver_code(email: str, code: str) -> str:
     """Send the code, or log it when no mail server is configured. Returns the mode used."""
     settings = get_settings()
@@ -47,11 +68,7 @@ def deliver_code(email: str, code: str) -> str:
         logger.warning("No SMTP host configured — access code for %s is %s", email, code)
         return LOGGED
 
-    message = EmailMessage()
-    message["Subject"] = subject
-    message["From"] = settings.smtp_from or settings.smtp_username
-    message["To"] = email
-    message.set_content(text)
+    message = build_message(email, code, sender=settings.smtp_from or settings.smtp_username)
 
     with smtplib.SMTP(settings.smtp_host, settings.smtp_port, timeout=20) as server:
         if settings.smtp_starttls:

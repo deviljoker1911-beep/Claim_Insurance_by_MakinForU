@@ -328,3 +328,24 @@ def test_the_session_cookie_is_marked_secure_only_when_the_visitor_is_on_https(c
         headers={"X-Forwarded-Proto": "https"},
     )
     assert "secure" in behind_proxy.headers["set-cookie"].lower()
+
+
+def test_the_code_email_carries_the_headers_a_spam_filter_looks_for():
+    """A message with no Date and no Message-ID is scored against before anyone reads it.
+
+    Both are required by RFC 5322 and Python supplies neither. The first codes this sent were
+    accepted by the mail server and filed as junk by the recipient, which looks from the sending
+    end exactly like success.
+    """
+    from email.utils import parseaddr
+
+    from app.access.mail import build_message
+
+    message = build_message("someone@example.com", "123456", sender="ClaimAI <no-reply@example.com>")
+    assert message["Date"], "no Date header"
+    assert message["Message-ID"], "no Message-ID header"
+    assert message["Auto-Submitted"] == "auto-generated"
+    # The id is bound to the sending domain rather than to whatever host happens to run this.
+    assert message["Message-ID"].rstrip(">").endswith("example.com")
+    assert parseaddr(message["From"])[1] == "no-reply@example.com"
+    assert "123456" in message.get_content()
