@@ -10,7 +10,7 @@ const STEPS = [
 
 export function ClaimSteps({ current }: { current: number }) {
   return (
-    <ol className="mb-6 grid grid-cols-3 gap-3" aria-label="Claim intake steps">
+    <ol className="mb-5 grid grid-cols-3 gap-2 sm:mb-6 sm:gap-3" aria-label="Claim intake steps">
       {STEPS.map((step, index) => {
         const done = index < current
         const active = index === current
@@ -19,7 +19,9 @@ export function ClaimSteps({ current }: { current: number }) {
             key={step.label}
             aria-current={active ? 'step' : undefined}
             className={cx(
-              'flex items-center gap-3 rounded-xl border px-4 py-3 transition-colors',
+              // A third of a phone is too narrow for a number, a title and a subtitle side by side,
+              // so there the number sits above the title and the subtitle goes.
+              'flex flex-col items-start gap-1.5 rounded-xl border px-3 py-2.5 transition-colors sm:flex-row sm:items-center sm:gap-3 sm:px-4 sm:py-3',
               active ? 'border-brand-200 bg-brand-50/70' : 'border-slate-200 bg-white',
             )}
           >
@@ -34,8 +36,12 @@ export function ClaimSteps({ current }: { current: number }) {
               {done ? <Check className="size-3.5" strokeWidth={3} /> : index + 1}
             </span>
             <div className="min-w-0">
-              <p className={cx('text-sm font-medium', active ? 'text-brand-900' : 'text-slate-700')}>{step.label}</p>
-              <p className="truncate text-xs text-slate-500">{done ? 'Completed' : step.description}</p>
+              <p className={cx('text-xs font-medium sm:text-sm', active ? 'text-brand-900' : 'text-slate-700')}>
+                {step.label}
+              </p>
+              <p className="hidden truncate text-xs text-slate-500 sm:block">
+                {done ? 'Completed' : step.description}
+              </p>
             </div>
           </li>
         )

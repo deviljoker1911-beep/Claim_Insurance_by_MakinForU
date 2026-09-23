@@ -25,7 +25,12 @@
   --shadow-card: 0 1px 2px 0 rgb(15 23 42 / 0.04), 0 1px 3px 0 rgb(15 23 42 / 0.05);
   --shadow-elevated: 0 12px 32px -12px rgb(15 23 42 / 0.2);
 
-  --animate-fade-in: fade-in 0.28s ease-out both;
+  /* `backwards`, not `both`. Held after it finishes, the last frame is translateY(0), which is
+     still a transform — and any transform makes the element the frame that position: fixed is
+     measured from. Every page sits inside this, so the evidence viewer opened as an overlay the
+     height of the whole page, and focusing its close button scrolled a reader back to the top.
+     `backwards` drops the transform once the fade is done. */
+  --animate-fade-in: fade-in 0.28s ease-out backwards;
 
   @keyframes fade-in {
     from {

@@ -142,11 +142,11 @@ export function NewClaimPage() {
             {createClaim.error && <Notice tone="danger">{errorMessage(createClaim.error)}</Notice>}
           </div>
 
-          <div className="mt-1 grid grid-cols-2 gap-x-5 gap-y-4 pt-3">
+          <div className="mt-1 grid grid-cols-1 gap-x-5 gap-y-4 pt-3 sm:grid-cols-2">
             {FIELDS.map((field) => {
               const error = submitted ? errors[field.name] : undefined
               return (
-                <label key={field.name} className={cx('block', field.wide && 'col-span-2')}>
+                <label key={field.name} className={cx('block', field.wide && 'sm:col-span-2')}>
                   <span className="text-sm font-medium text-slate-700">
                     {field.label}
                     {field.optional && <span className="ml-1 font-normal text-slate-400">(optional)</span>}
@@ -172,9 +172,14 @@ export function NewClaimPage() {
             })}
           </div>
 
-          <div className="mt-6 flex items-center justify-between gap-4 border-t border-slate-100 pt-4">
+          <div className="mt-6 flex flex-col gap-3 border-t border-slate-100 pt-4 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
             <p className="text-xs text-slate-500">A claim number is assigned when the claim is created.</p>
-            <Button type="submit" disabled={createClaim.isPending || (submitted && hasErrors)} data-testid="create-claim">
+            <Button
+              type="submit"
+              disabled={createClaim.isPending || (submitted && hasErrors)}
+              data-testid="create-claim"
+              className="w-full justify-center sm:w-auto"
+            >
               {createClaim.isPending ? (
                 <LoaderCircle className="size-4 animate-spin" />
               ) : (

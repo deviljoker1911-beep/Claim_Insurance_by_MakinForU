@@ -202,7 +202,14 @@ export function ClaimOverviewPage() {
             <CardHeader
               title="What ClaimAI needs from you"
               description="Each request comes from a checklist requirement this claim does not yet meet."
-              actions={questions.data ? <QuestionsSummaryBadge questions={questions.data.items} /> : undefined}
+              // On a phone the header stacks onto the panel's own strip, which says the same thing.
+              actions={
+                questions.data ? (
+                  <span className="hidden sm:inline-flex">
+                    <QuestionsSummaryBadge questions={questions.data.items} />
+                  </span>
+                ) : undefined
+              }
             />
             {questions.isPending ? (
               <div className="space-y-2 p-5">

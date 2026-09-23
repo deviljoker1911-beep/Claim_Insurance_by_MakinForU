@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import { Outlet, ScrollRestoration, useLocation } from 'react-router'
 
 import { AccessGate } from '../components/access/AccessGate'
@@ -9,6 +10,22 @@ import { useAccessSession } from '../lib/hooks'
 export function Layout() {
   const { pathname } = useLocation()
   const access = useAccessSession()
+  const [navOpen, setNavOpen] = useState(false)
+
+  // An open drawer is dismissed with Escape, and the page behind it does not scroll under it.
+  useEffect(() => {
+    if (!navOpen) return
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setNavOpen(false)
+    }
+    const previous = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    window.addEventListener('keydown', onKey)
+    return () => {
+      window.removeEventListener('keydown', onKey)
+      document.body.style.overflow = previous
+    }
+  }, [navOpen])
 
   // Until the deployment has said whether it asks for an address, show neither the app nor the
   // gate: flashing one and replacing it with the other reads as a bug on every page load.
@@ -28,10 +45,10 @@ export function Layout() {
 
   return (
     <div className="min-h-screen">
-      <Sidebar />
-      <div className="pl-64">
-        <Topbar />
-        <main className="mx-auto w-full max-w-[1440px] px-8 pt-8 pb-16">
+      <Sidebar open={navOpen} onClose={() => setNavOpen(false)} />
+      <div className="lg:pl-64">
+        <Topbar navOpen={navOpen} onOpenNav={() => setNavOpen(true)} />
+        <main className="mx-auto w-full max-w-[1440px] px-4 pt-5 pb-16 sm:px-6 sm:pt-6 lg:px-8 lg:pt-8">
           <div key={pathname} className="animate-fade-in">
             <Outlet />
           </div>

@@ -249,7 +249,50 @@ export function ClaimIntakePage() {
           />
         </aside>
       </div>
+      {/* Room at the foot of the page for the bar below, so it never sits over the last card. */}
+      {data.documents.length > 0 && <div aria-hidden className="h-20 xl:hidden" />}
+      <AnalysisBar
+        claimId={claimId}
+        documentCount={data.documents.length}
+        state={state}
+        running={running}
+        pendingUploads={uploading}
+        starting={startAnalysis.isPending}
+        onStart={runAnalysis}
+      />
     </>
+  )
+}
+
+/**
+ * The next step, kept at the foot of the screen below the width where the panel sits beside the
+ * list. There the panel is under every uploaded document — three screens down on a phone with
+ * the demo pack — so someone who has just added their files is left looking at a list with no
+ * way on. Nothing here the panel does not also do; it only stays where a thumb can reach it.
+ */
+function AnalysisBar({ claimId, ...props }: AnalysisPanelProps & { claimId: string }) {
+  const { finished, canStart, label } = analysisAction(props)
+  const { running, starting, onStart, documentCount } = props
+  if (documentCount === 0 || (!canStart && !running && !starting && !finished)) return null
+
+  return (
+    <div
+      data-testid="analysis-bar"
+      className="fixed inset-x-0 bottom-0 z-20 border-t border-slate-200 bg-white/95 px-4 py-3 backdrop-blur sm:px-6 lg:left-64 xl:hidden"
+      style={{ paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))' }}
+    >
+      {finished && !running ? (
+        <ButtonLink to={`/claims/${claimId}`} className="w-full justify-center">
+          <LayoutList className="size-4" />
+          Open the claim overview
+        </ButtonLink>
+      ) : (
+        <Button className="w-full justify-center" onClick={onStart} disabled={!canStart}>
+          {running || starting ? <LoaderCircle className="size-4 animate-spin" /> : <Play className="size-4" />}
+          {label}
+        </Button>
+      )}
+    </div>
   )
 }
 
@@ -262,8 +305,11 @@ interface AnalysisPanelProps {
   onStart: () => void
 }
 
-function AnalysisPanel({ documentCount, state, running, pendingUploads, starting, onStart }: AnalysisPanelProps) {
-  const health = useHealth()
+/**
+ * What the analysis button says and whether it can be pressed. Written once, because the panel
+ * and the bar a phone shows at the foot of the screen have to agree about both.
+ */
+function analysisAction({ documentCount, state, running, pendingUploads, starting }: Omit<AnalysisPanelProps, 'onStart'>) {
   const waiting = (state?.counts.pending ?? 0) + (state?.counts.failed ?? 0)
   const analysed = state?.counts.processed ?? 0
   const finished = state ? state.state === 'completed' || state.state === 'completed_with_failures' : false
@@ -275,6 +321,12 @@ function AnalysisPanel({ documentCount, state, running, pendingUploads, starting
       : analysed > 0 && waiting > 0
         ? `Analyse ${plural(waiting, 'new document')}`
         : 'Start Analysis'
+  return { waiting, analysed, finished, canStart, label }
+}
+
+function AnalysisPanel({ documentCount, state, running, pendingUploads, starting, onStart }: AnalysisPanelProps) {
+  const health = useHealth()
+  const { finished, canStart, label } = analysisAction({ documentCount, state, running, pendingUploads, starting })
   const ocr = health.data?.ocr
 
   return (

@@ -56,9 +56,9 @@ export function ReadinessCard({ readiness, claimId }: { readiness: ReadinessResp
           <p className="mt-1 max-w-xl text-sm text-slate-500">{readiness.status_detail}</p>
         </div>
 
-        <div className="flex flex-col items-end gap-2">
+        <div className="flex w-full flex-col items-start gap-2 sm:w-auto sm:items-end">
           {review.superseded ? (
-            <div className="text-right" data-testid="superseded-stamp">
+            <div className="sm:text-right" data-testid="superseded-stamp">
               <Badge tone="warning">
                 <History className="size-3.5" />
                 Approval superseded
@@ -87,7 +87,7 @@ export function ReadinessCard({ readiness, claimId }: { readiness: ReadinessResp
               </Button>
             </div>
           ) : review.approved ? (
-            <div className="text-right" data-testid="approved-stamp">
+            <div className="sm:text-right" data-testid="approved-stamp">
               <Badge tone="success">
                 <BadgeCheck className="size-3.5" />
                 Approved by {review.approved_by}
