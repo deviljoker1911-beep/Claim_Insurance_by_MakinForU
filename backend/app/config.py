@@ -77,6 +77,9 @@ class Settings(BaseSettings):
     access_requests_per_ip_per_hour: int = 20
     # Reads the captured visitor list. Without one, the list is not served at all.
     access_admin_token: SecretStr = SecretStr("")
+    # Who is told when someone proves an address for the first time; comma-separated for more
+    # than one. Empty: nobody is. Sent through the same SMTP settings as the codes.
+    access_signup_alert_to: str = ""
 
     # Mail delivery for the access code. With no host configured the code is written to the
     # application log instead, so the gate can be exercised offline and in tests.

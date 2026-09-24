@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response
-from sqlalchemy import select
+from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Request, Response
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.access import codes as code_service
@@ -121,6 +121,7 @@ def verify(
     payload: AccessVerifyIn,
     request: Request,
     response: Response,
+    background: BackgroundTasks,
     session: Session = Depends(get_session),
 ) -> AccessSession:
     """Exchange a code for a session."""
@@ -131,6 +132,16 @@ def verify(
     outcome = code_service.verify_code(session, email, payload.code)
     if not outcome.ok:
         raise HTTPException(status_code=401, detail={"message": outcome.message, "reason": outcome.reason})
+
+    if outcome.first_visit:
+        verified = select(func.count()).select_from(Visitor).where(Visitor.verified_at.is_not(None))
+        # After the response, so a slow mail server never keeps someone waiting at the door.
+        background.add_task(
+            mail.alert_new_visitor,
+            email,
+            user_agent=request.headers.get("user-agent"),
+            verified_count=session.scalar(verified) or 0,
+        )
 
     _cookie(response, request, email)
     return AccessSession(gate_enabled=True, verified=True, email=email, delivery=mail.delivery_mode())

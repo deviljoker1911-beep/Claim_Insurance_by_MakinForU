@@ -349,3 +349,84 @@ def test_the_code_email_carries_the_headers_a_spam_filter_looks_for():
     assert message["Message-ID"].rstrip(">").endswith("example.com")
     assert parseaddr(message["From"])[1] == "no-reply@example.com"
     assert "123456" in message.get_content()
+
+
+# --- telling the owner someone new came in ----------------------------------------------------
+
+
+@pytest.fixture
+def outbox(gate, monkeypatch):
+    """Alerts on, a mail server that records instead of sending, and the codes still logged.
+
+    The code is issued with no SMTP host, so it lands in the log where `ask` reads it; the host is
+    set only for the sign-in that follows, which is when an alert is sent.
+    """
+    from app.access import mail
+
+    sent = []
+    before = (gate.access_signup_alert_to, gate.smtp_host)
+    gate.access_signup_alert_to = "owner@example.com"
+    monkeypatch.setattr(mail, "_smtp_send", sent.append)
+    yield sent
+    gate.access_signup_alert_to, gate.smtp_host = before
+
+
+def sign_in(client, caplog, gate, email: str, user_agent: str = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_7)"):
+    code = ask(client, caplog, email)
+    gate.smtp_host = "smtp.example.com"
+    try:
+        return client.post(
+            "/api/access/verify", json={"email": email, "code": code}, headers={"user-agent": user_agent}
+        )
+    finally:
+        gate.smtp_host = ""
+
+
+def test_the_owner_is_told_when_someone_new_comes_in(client, caplog, gate, outbox):
+    response = sign_in(client, caplog, gate, "new.person@example.com")
+    assert response.status_code == 200, response.text
+
+    assert len(outbox) == 1
+    alert = outbox[0]
+    assert alert["To"] == "owner@example.com"
+    assert "new.person@example.com" in alert["Subject"]
+    # Hitting reply follows up with the visitor, which is what the alert is for.
+    assert alert["Reply-To"] == "new.person@example.com"
+    body = alert.get_content()
+    assert "Device: iPhone" in body
+    assert "so far: 1" in body
+
+
+def test_coming_back_is_not_news(client, caplog, gate, outbox):
+    """Only the first time an address is proved; a second sign-in on another device is silent."""
+    assert sign_in(client, caplog, gate, "returning@example.com").status_code == 200
+    client.cookies.clear()
+    assert sign_in(client, caplog, gate, "returning@example.com").status_code == 200
+    assert len(outbox) == 1
+
+
+def test_a_wrong_code_tells_nobody_anything(client, caplog, gate, outbox):
+    ask(client, caplog, "guessing@example.com")
+    response = client.post("/api/access/verify", json={"email": "guessing@example.com", "code": "000000"})
+    assert response.status_code == 401
+    assert outbox == []
+
+
+def test_no_alert_is_sent_unless_an_address_for_it_is_configured(client, caplog, gate, outbox):
+    gate.access_signup_alert_to = ""
+    assert sign_in(client, caplog, gate, "quiet@example.com").status_code == 200
+    assert outbox == []
+
+
+def test_a_mail_server_that_is_down_does_not_keep_the_visitor_out(client, caplog, gate, outbox, monkeypatch):
+    """The alert is the owner's convenience. Failing it must not cost the visitor their session."""
+    from app.access import mail
+
+    def refuse(message):
+        raise OSError("connection refused")
+
+    monkeypatch.setattr(mail, "_smtp_send", refuse)
+    response = sign_in(client, caplog, gate, "unlucky@example.com")
+    assert response.status_code == 200, response.text
+    assert COOKIE_NAME in response.cookies
+    assert client.get("/api/access/session").json()["verified"] is True

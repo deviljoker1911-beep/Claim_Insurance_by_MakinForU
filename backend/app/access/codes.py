@@ -38,6 +38,8 @@ class CodeOutcome:
     ok: bool
     reason: str = ""
     message: str = ""
+    # True only the first time an address is proved, which is what a new-visitor alert is for.
+    first_visit: bool = False
 
 
 def normalise_email(raw: str) -> str | None:
@@ -155,12 +157,13 @@ def verify_code(session: Session, email: str, code: str) -> CodeOutcome:
         visitor = Visitor(email=email)
         session.add(visitor)
     now = utcnow()
-    if visitor.verified_at is None:
+    first_visit = visitor.verified_at is None
+    if first_visit:
         visitor.verified_at = now
     visitor.last_seen_at = now
     session.commit()
     logger.info("Access granted to %s", email)
-    return CodeOutcome(True)
+    return CodeOutcome(True, first_visit=first_visit)
 
 
 def touch(session: Session, email: str) -> None:

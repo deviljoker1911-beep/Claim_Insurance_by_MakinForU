@@ -48,6 +48,8 @@ services:
       ACCESS_GATE_ENABLED: ${ACCESS_GATE_ENABLED:-true}
       ACCESS_SESSION_SECRET: ${ACCESS_SESSION_SECRET:?set ACCESS_SESSION_SECRET in the env file}
       ACCESS_ADMIN_TOKEN: ${ACCESS_ADMIN_TOKEN:-}
+      # Emailed the first time each visitor proves an address. Empty: nobody is.
+      ACCESS_SIGNUP_ALERT_TO: ${ACCESS_SIGNUP_ALERT_TO:-}
       # With no SMTP host the code is written to the container log instead of being sent.
       SMTP_HOST: ${SMTP_HOST:-}
       SMTP_PORT: ${SMTP_PORT:-587}

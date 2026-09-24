@@ -257,6 +257,11 @@ Every address that asked is there, whether or not they finished — someone who 
 back is still a lead. **A demo reset clears the claims and keeps the people.** With no
 `ACCESS_ADMIN_TOKEN` set, that endpoint is not served at all.
 
+Or be told as it happens: set `ACCESS_SIGNUP_ALERT_TO` and the first time each visitor proves an
+address, that inbox gets an email naming them and the device they came in on. Replying to it
+writes to the visitor. It is sent after they are let in, so a mail server that is down costs you
+the alert and never costs them the demo. Coming back later, or on another device, sends nothing.
+
 The gate is **off by default**, so local development, the test suite and an offline demo never see
 it.
 
@@ -346,6 +351,7 @@ What `.env.prod` needs:
 | `POSTGRES_PASSWORD` | The database password. Used by the database and the app. |
 | `ACCESS_SESSION_SECRET` | Signs the session cookie. `openssl rand -hex 32`. Changing it signs everyone out, which is the only way to revoke a session. |
 | `ACCESS_ADMIN_TOKEN` | Reads the visitor list. Leave empty and that endpoint is not served. |
+| `ACCESS_SIGNUP_ALERT_TO` | Emailed when someone new comes in. Comma-separated; needs `SMTP_*`. Leave empty for no alerts. |
 | `SMTP_*` | Where access codes are sent from. Leave `SMTP_HOST` empty and codes go to the container log instead. |
 | `DEMO_PACING_MS` | Slows the visible stages so an audience can follow them. `0` runs at full speed. |
 
